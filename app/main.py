@@ -8,6 +8,7 @@ from sqlmodel import SQLModel, text
 from sqlalchemy.ext.asyncio import create_async_engine
 import logging
 import logfire
+from langfuse import Langfuse
 
 import models  # noqa
 from config import Settings
@@ -30,8 +31,9 @@ async def lifespan(app: FastAPI):
         level=settings.log_level,
     )
 
-    #    logfire.configure()
-
+    logfire.configure()
+    langfuse = Langfuse()
+    
     app.state.settings = settings
     app.state.whatsapp = WhatsAppClient(
         settings.whatsapp_host,

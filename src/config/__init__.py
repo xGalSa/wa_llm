@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
 
+    langfuse_secret_key: str
+    langfuse_public_key: str
+    langfuse_host: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

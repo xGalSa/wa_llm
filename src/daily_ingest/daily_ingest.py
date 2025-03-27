@@ -5,7 +5,7 @@ from typing import Dict, List
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from pydantic_ai.result import RunResult
+from pydantic_ai.result import ResultDataT
 from sqlmodel import desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from tenacity import retry, wait_random_exponential, stop_after_attempt, after_log
@@ -51,7 +51,7 @@ def _remap_user_mapping_to_tagged_users(
     stop=stop_after_attempt(6),
     after=after_log(logger, logging.ERROR),
 )
-async def conversation_splitter_agent(content: str) -> RunResult[List[Topic]]:
+async def conversation_splitter_agent(content: str) -> ResultDataT:
     agent = Agent(
         model="anthropic:claude-3-5-sonnet-latest",
         system_prompt="""This conversation is a chain of messages that was uninterrupted by a break in the conversation of up to 3 hours.

@@ -8,6 +8,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from config import Settings
 from daily_ingest.daily_ingest import topicsLoader
 from voyageai.client_async import AsyncClient
+from langfuse import Langfuse
 
 from whatsapp import WhatsAppClient
 
@@ -21,6 +22,7 @@ async def main():
         level=settings.log_level,
     )
     logfire.configure()
+    langfuse = Langfuse()
 
     whatsapp = WhatsAppClient(
         settings.whatsapp_host,

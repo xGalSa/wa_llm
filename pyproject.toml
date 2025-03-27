@@ -17,6 +17,7 @@ dependencies = [
     "voyageai>=0.3.2",
     "tenacity>=9.0.0",
     "alembic>=1.14.1",
+    "langfuse>=2.59.7",
 ]
 [tool.pyright.reportMissingTypeStubs]
 sqlmodel = false
