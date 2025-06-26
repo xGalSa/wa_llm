@@ -25,7 +25,6 @@ async def main():
     logfire.instrument_system_metrics()
     logfire.configure(scrubbing=False)
 
-
     whatsapp = WhatsAppClient(
         settings.whatsapp_host,
         settings.whatsapp_basic_auth_user,
