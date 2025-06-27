@@ -14,7 +14,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/load new kbtopics")
+@router.post("/load_new_kbtopics")
 async def load_new_kbtopics(
     session: Annotated[AsyncSession, Depends(get_db_async_session)],
     whatsapp: Annotated[WhatsAppClient, Depends(get_whatsapp)],
