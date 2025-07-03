@@ -36,7 +36,7 @@ async def main():
         # Create an async HTTP client and forward the message
         async with httpx.AsyncClient(timeout=600.0) as client:
             response = await client.post(
-                f"{settings.base_url}/daily_summary",
+                f"{settings.base_url}/summarize_and_send_to_groups",
             )
             response.raise_for_status()
 
