@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from config import Settings
-from daily_summary_sync import daily_summary_sync
+from summarize_and_send_to_groups import summarize_and_send_to_groups
 from whatsapp import WhatsAppClient
 
 
@@ -40,7 +40,7 @@ async def main():
     async with async_session() as session:
         try:
             logging.info("Starting sync")
-            await daily_summary_sync(session, whatsapp)
+            await summarize_and_send_to_groups(session, whatsapp)
             await session.commit()
             logging.info("Finished sync")
         except Exception:
