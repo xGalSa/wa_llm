@@ -10,6 +10,7 @@ from .webhook import WhatsAppWebhookPayload, Message as PayloadMessage
 if TYPE_CHECKING:
     from .group import Group
     from .sender import Sender
+    from .reaction import Reaction
 
 
 class BaseMessage(SQLModel):
@@ -53,7 +54,7 @@ class BaseMessage(SQLModel):
         if isinstance(jid, str):
             jid = parse_jid(jid)
 
-        return f"@{jid.user}" in self.text
+        return f"@{jid.user}" in (self.text or "")
 
 
 class Message(BaseMessage, table=True):
@@ -70,12 +71,21 @@ class Message(BaseMessage, table=True):
             "backref": "replied_to",
         }
     )
+    # Reactions relationship - one message can have many reactions
+    reactions: List["Reaction"] = Relationship(
+        back_populates="message", 
+        sa_relationship_kwargs={"lazy": "selectin"}
+    )
 
     @classmethod
     def from_webhook(cls, payload: WhatsAppWebhookPayload) -> "Message":
         """Create Message instance from WhatsApp webhook payload."""
         if not payload.message:
-            payload.message = PayloadMessage(id=f"na-{payload.timestamp.timestamp()}")
+            payload.message = PayloadMessage(
+                id=f"na-{payload.timestamp.timestamp()}",
+                replied_id=None,
+                quoted_message=None
+            )
         assert payload.message, "Missing message"
         assert payload.message.id, "Missing message ID"
         assert payload.from_, "Missing sender"
@@ -114,7 +124,7 @@ class Message(BaseMessage, table=True):
     def _extract_message_text(payload: WhatsAppWebhookPayload) -> Optional[str]:
         """Extract message text based on content type."""
         # Return direct message text if available
-        if payload.message.text:
+        if payload.message and payload.message.text:
             return payload.message.text
 
         # Map content types to their caption attributes
