@@ -37,7 +37,7 @@ LOGFIRE_TOKEN=your-key-here # You need to have a real logfire key here
 
 3. Start the services:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 4. Initialize the WhatsApp connection by scanning the QR code through the WhatsApp web interface.

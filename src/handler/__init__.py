@@ -82,7 +82,7 @@ class MessageHandler(BaseHandler):
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     forward_url,
-                    json=payload.model_dump(),  # Convert Pydantic model to dict for JSON serialization
+                    json=payload.model_dump(mode="json"),  # Convert Pydantic model to dict for JSON serialization
                     headers={"Content-Type": "application/json"},
                 )
                 response.raise_for_status()
