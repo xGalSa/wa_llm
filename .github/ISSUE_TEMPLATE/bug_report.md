@@ -1,6 +1,6 @@
 ---
 name: 🐞 Bug Report
-description: Report a bug found in Application.
+about: Report a bug found in Application.
 title: "🐞 "
 labels: ["bug"]
 assignees: ''
