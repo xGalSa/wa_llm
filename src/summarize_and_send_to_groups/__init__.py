@@ -54,7 +54,7 @@ async def summarize_and_send_to_group(session, whatsapp: WhatsAppClient, group: 
     )
     messages: list[Message] = resp.all()
 
-    if len(messages) < 7:
+    if len(messages) < 15:
         logging.info("Not enough messages to summarize in group %s", group.group_name)
         return
 
