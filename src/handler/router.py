@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -71,25 +71,63 @@ class Router(BaseHandler):
         return result.data.intent
 
     async def summarize(self, message: Message):
-        time_24_hours_ago = datetime.now() - timedelta(hours=24)
+        today_start = datetime.combine(date.today(), datetime.min.time())
         stmt = (
             select(Message)
             .where(Message.chat_jid == message.chat_jid)
-            .where(Message.timestamp >= time_24_hours_ago)
+            .where(Message.timestamp >= today_start)
             .order_by(desc(Message.timestamp))
-            .limit(30)
+            .limit(100)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
 
+        if len(messages) > 150:
+            # For very active groups, focus on the most recent important messages
+            messages = messages[-150:]
+
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
-            system_prompt="""Summarize the following group chat messages in a few words.
-            
-            - You MUST state that this is a summary of TODAY's messages. Even if the user asked for a summary of a different time period (in that case, state that you can only summarize today's messages)
-            - Always personalize the summary to the user's request
-            - Keep it short and conversational
-            - Tag users when mentioning them
+            system_prompt="""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
+
+            CONTEXT: You are summarizing a military/educational group chat. Focus on operational, educational, and organizational content.
+
+            FILTERING CRITERIA - Only include content that is:
+            - Important decisions, announcements, or action items
+            - New information learned or insights gained
+            - Relevant for future reference or follow-up
+            - Significant developments or changes
+            - Key discussions that impact the group or individuals
+            - Important questions asked and their answers
+            - Notable achievements or progress updates
+            - Operational updates or status changes
+            - Educational content or learning moments
+            - Administrative announcements or procedures
+
+            EXCLUDE:
+            - Casual small talk, greetings, or social pleasantries
+            - Irrelevant jokes or memes
+            - Personal conversations not relevant to the group
+            - Repetitive or redundant discussions
+            - Temporary or time-sensitive information that's no longer relevant
+            - System messages or technical errors
+
+            SUMMARY STRUCTURE:
+            - Start with: "📋 **Comprehensive Summary of Today's Important Discussions**"
+            - Use clear section headers like "🎯 Key Decisions", "📚 New Information", "⚡ Action Items"
+            - Include specific details, quotes, and key phrases when relevant
+            - Tag ALL users when mentioning them (e.g., @972536150150)
+            - Mention timing/chronology when it adds context
+            - Be as detailed and informative as possible while staying focused on relevance
+            - Include any action items, decisions made, or follow-ups needed
+            - Highlight what was learned or discovered today
+            - End with a "📝 Summary" section of key takeaways
+
+            QUALITY REQUIREMENTS:
+            - Be thorough and comprehensive - include ALL important content
+            - Focus on lasting value and future relevance
+            - Maintain readability and clear organization
+            - Use emojis and formatting to improve readability
             - You MUST respond with the same language as the request
             """,
             output_type=str,
@@ -107,7 +145,7 @@ class Router(BaseHandler):
     async def about(self, message):
         await self.send_message(
             message.chat_jid,
-            "I'm an open-source bot created for the GenAI Israel community - https://llm.org.il.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\nPlease send me PRs and star me at https://github.com/ilanbenb/wa_llm ⭐️",
+            "I'm an open-source bot created for the Hashlama 018.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\n",
             message.message_id,
         )
 

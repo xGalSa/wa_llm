@@ -9,7 +9,7 @@ services:
       file: docker-compose.base.yml
       service: whatsapp
     environment:
-      - WHATSAPP_WEBHOOK=http://web-server:8000/webhook
+      - WHATSAPP_WEBHOOK=http://web-server:5001/webhook
 
   web-server:
     build: .
@@ -18,7 +18,7 @@ services:
       - ./.env:/app/.env
       - ./migrations:/app/migrations
     ports:
-      - "8000:8000"
+      - "8000:5001"
     depends_on:
       - postgres
       - whatsapp
