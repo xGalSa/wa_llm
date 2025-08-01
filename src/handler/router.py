@@ -86,13 +86,16 @@ class Router(BaseHandler):
 
         await self.send_message(
             message.chat_jid,
-            "אני על זה! כבר מגבש לכם סיכום לפנים.",
+            f"אני על זה! כבר מגבש לכם סיכום לפנים.\n עכשיו השעה {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             message.message_id,
         )
 
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
             system_prompt="""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
+
+            CURRENT TIME CONTEXT: It is now {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (local time).
+            Messages from earlier today may be outdated if they've been superseded by newer information.
 
             CONTEXT: You are summarizing a military/educational group chat. Focus on operational, educational, and organizational content.
 
@@ -122,7 +125,7 @@ class Router(BaseHandler):
             - Include specific details, quotes, and key phrases when relevant
             - Tag ALL users when mentioning them (e.g., @972536150150)
             - Mention timing/chronology when it adds context
-            - Be as detailed and informative as possible while staying focused on relevance
+            - Be detailed and informative while staying focused on relevance
             - Include any action items, decisions made, or follow-ups needed
             - Highlight what was learned or discovered today
             - End with a "📝 Summary" section of key takeaways
@@ -131,11 +134,11 @@ class Router(BaseHandler):
             - Be thorough and comprehensive - include ALL important content
             - Focus on lasting value and future relevance
             - Maintain readability and clear organization
-            - Use emojis and formatting to improve readability
+            - Use A LOT of emojis and formatting to improve readability
             - You MUST respond with the same language as the request
             """,
             output_type=str,
-            max_tokens=10000,
+            max_tokens=25000,
         )
 
         response = await agent.run(
