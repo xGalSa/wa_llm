@@ -79,7 +79,7 @@ class Router(BaseHandler):
             .where(Message.timestamp >= today_start) # From today
             .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
             .order_by(desc(Message.timestamp)) # Newest to oldest
-            .limit(1000)  # Capture more messages for better filtering
+            .limit(300)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
@@ -90,9 +90,17 @@ class Router(BaseHandler):
             message.message_id,
         )
 
+        if len(messages) > 100:
+            await self.send_message(
+                message.chat_jid,
+                f"מעבד {len(messages)} הודעות... זה יכול לקחת דקה.",
+                message.message_id,
+            )
+
+
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
-            system_prompt="""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
+            system_prompt=f"""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
 
             CURRENT TIME CONTEXT: It is now {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (local time).
             Messages from earlier today may be outdated if they've been superseded by newer information.
@@ -136,6 +144,7 @@ class Router(BaseHandler):
             - Maintain readability and clear organization
             - Use A LOT of emojis and formatting to improve readability
             - You MUST respond with the same language as the request
+            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 500-1000 words for most summaries. If there's very little content, be brief. If there's a lot of important content, be thorough but well-organized.
             """,
             output_type=str,
             max_tokens=25000,
@@ -144,6 +153,12 @@ class Router(BaseHandler):
         response = await agent.run(
             f"@{parse_jid(message.sender_jid).user}: {message.text}\n\n # History:\n {chat2text(messages)}"
         )
+
+        # If pydantic_ai provides usage info
+        if hasattr(response, 'usage'):
+            logger.info(f"Tokens used: {response.usage}")
+            print(f"Tokens used: {response.usage}")
+
         await self.send_message(
             message.chat_jid,
             response.data,
