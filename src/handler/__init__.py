@@ -29,51 +29,70 @@ class MessageHandler(BaseHandler):
         super().__init__(session, whatsapp, embedding_client)
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
-        message = await self.store_message(payload)
+        print("=== MESSAGE HANDLER START ===")
+        
+        try:
+            message = await self.store_message(payload)
+            print(f"Message stored: {message is not None}")
+            print(f"Message text: {message.text if message else 'None'}")
+            print(f"Message sender: {message.sender_jid if message else 'None'}")
+            print(f"Message group: {message.group_jid if message else 'None'}")
 
-        if (
-            message
-            and message.group
-            and message.group.managed
-            and message.group.forward_url
-        ):
-            await self.forward_message(payload, message.group.forward_url)
+            if (
+                message
+                and message.group
+                and message.group.managed
+                and message.group.forward_url
+            ):
+                await self.forward_message(payload, message.group.forward_url)
 
-        # ignore messages that don't exist or don't have text
-        if not message or not message.text:
-            return
+            # ignore messages that don't exist or don't have text
+            if not message or not message.text:
+                print("No message or no text - returning")
+                return
 
-        if message.sender_jid.endswith("@lid"):
-            logging.info(
-                f"Received message from {message.sender_jid}: {payload.model_dump_json()}"
-            )
-
-        # ignore messages from unmanaged groups
-        if message and message.group and not message.group.managed:
-            return
-
-        # If bot was mentioned
-        if message.has_mentioned(await self.whatsapp.get_my_jid()):
-            # Check if the message is from the authorized user (972532741041)
-            if message.sender_jid.startswith("972532741041"):
-                # Full functionality for the makas
-                await self.router(message)
-            else:
-                # Predefined message for everyone else
-                await self.send_message(
-                    message.chat_jid,
-                    "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי",
-                    message.message_id,
+            if message.sender_jid.endswith("@lid"):
+                logging.info(
+                    f"Received message from {message.sender_jid}: {payload.model_dump_json()}"
                 )
 
-        # Handle whatsapp links in group
-        '''if (
-            message.group
-            and message.group.managed
-            and message.group.notify_on_spam
-            and "https://chat.whatsapp.com/" in message.text
-        ):
-            await self.whatsapp_group_link_spam(message)'''
+            # ignore messages from unmanaged groups
+            # TEMPORARILY DISABLED FOR TESTING
+            # if message and message.group and not message.group.managed:
+            #     return
+
+            print("Checking if bot was mentioned...")
+            my_jid = await self.whatsapp.get_my_jid()
+            print(f"My JID: {my_jid}")
+            print(f"Message text: {message.text}")
+            print(f"Looking for: @{my_jid.user}")
+            
+            # If bot was mentioned
+            if message.has_mentioned(my_jid):
+                print("Bot was mentioned!")
+                # Check if the message is from the authorized user (972532741041)
+                if message.sender_jid.startswith("972532741041"):
+                    print("Authorized user - calling router")
+                    # Full functionality for the makas
+                    await self.router(message)
+                    print("Router completed")
+                else:
+                    print("Unauthorized user - sending restricted message")
+                    # Predefined message for everyone else
+                    await self.send_message(
+                        message.chat_jid,
+                        "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי",
+                        message.message_id,
+                    )
+            else:
+                print("Bot was not mentioned")
+
+            print("=== MESSAGE HANDLER END ===")
+
+        except Exception as e:
+            print(f"Error in message handler: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
 
     async def forward_message(
         self, payload: WhatsAppWebhookPayload, forward_url: str
