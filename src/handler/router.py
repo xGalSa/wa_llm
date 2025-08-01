@@ -145,7 +145,7 @@ class Router(BaseHandler):
     async def about(self, message):
         await self.send_message(
             message.chat_jid,
-            "I'm an open-source bot created for the Hashlama 018.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\n",
+            "I'm an open-source bot created for the GenAI Israel community - https://llm.org.il.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\nPlease send me PRs and star me at https://github.com/ilanbenb/wa_llm ⭐️",
             message.message_id,
         )
 
