@@ -53,7 +53,17 @@ class MessageHandler(BaseHandler):
             return
 
         if message.has_mentioned(await self.whatsapp.get_my_jid()):
-            await self.router(message)
+            # Check if the message is from the authorized user (972532741041)
+            if message.sender_jid.startswith("972532741041"):
+                # Full functionality for the makas
+                await self.router(message)
+            else:
+                # Predefined message for everyone else
+                await self.send_message(
+                    message.chat_jid,
+                    "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי",
+                    message.message_id,
+                )
 
         # Handle whatsapp links in group
         if (

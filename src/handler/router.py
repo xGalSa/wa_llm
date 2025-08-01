@@ -77,14 +77,10 @@ class Router(BaseHandler):
             .where(Message.chat_jid == message.chat_jid)
             .where(Message.timestamp >= today_start)
             .order_by(desc(Message.timestamp))
-            .limit(100)  # Capture more messages for better filtering
+            .limit(300)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
-
-        if len(messages) > 150:
-            # For very active groups, focus on the most recent important messages
-            messages = messages[-150:]
 
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
