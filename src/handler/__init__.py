@@ -52,6 +52,7 @@ class MessageHandler(BaseHandler):
         if message and message.group and not message.group.managed:
             return
 
+        # If bot was mentioned
         if message.has_mentioned(await self.whatsapp.get_my_jid()):
             # Check if the message is from the authorized user (972532741041)
             if message.sender_jid.startswith("972532741041"):
@@ -66,13 +67,13 @@ class MessageHandler(BaseHandler):
                 )
 
         # Handle whatsapp links in group
-        if (
+        '''if (
             message.group
             and message.group.managed
             and message.group.notify_on_spam
             and "https://chat.whatsapp.com/" in message.text
         ):
-            await self.whatsapp_group_link_spam(message)
+            await self.whatsapp_group_link_spam(message)'''
 
     async def forward_message(
         self, payload: WhatsAppWebhookPayload, forward_url: str

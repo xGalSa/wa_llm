@@ -72,15 +72,23 @@ class Router(BaseHandler):
 
     async def summarize(self, message: Message):
         today_start = datetime.combine(date.today(), datetime.min.time())
+        my_jid = await self.whatsapp.get_my_jid()
         stmt = (
             select(Message)
-            .where(Message.chat_jid == message.chat_jid)
-            .where(Message.timestamp >= today_start)
-            .order_by(desc(Message.timestamp))
-            .limit(300)  # Capture more messages for better filtering
+            .where(Message.chat_jid == message.chat_jid) # From the same group
+            .where(Message.timestamp >= today_start) # From today
+            .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
+            .order_by(desc(Message.timestamp)) # Newest to oldest
+            .limit(1000)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
+
+        await self.send_message(
+            message.chat_jid,
+            "אני על זה! כבר מגבש לכם סיכום לפנים.",
+            message.message_id,
+        )
 
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
@@ -127,6 +135,7 @@ class Router(BaseHandler):
             - You MUST respond with the same language as the request
             """,
             output_type=str,
+            max_tokens=10000,
         )
 
         response = await agent.run(
