@@ -98,7 +98,7 @@ class Router(BaseHandler):
             CURRENT TIME CONTEXT: It is now {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (local time).
             Messages from earlier today may be outdated if they've been superseded by newer information.
 
-            CONTEXT: You are summarizing a military/educational group chat. Focus on operational, educational, and organizational content.
+            CONTEXT: You are summarizing a military/educational group chat into a WhatsApp message. Focus on operational, educational, and organizational content.
 
             PRIORITY CONTENT - Include these with full details:
             - Important decisions, announcements, or action items
@@ -115,18 +115,15 @@ class Router(BaseHandler):
             - Temporary or time-sensitive information that's no longer relevant
 
             SUMMARY STRUCTURE:
-            - Start with: "📋 *Comprehensive Summary of Today's Important Discussions*"
+            - Start with: "📋 Comprehensive Summary of Today's Important Discussions"
             - Use clear section headers like "🎯 Key Decisions", "📚 New Information", "⚡ Action Items"
             - Include specific details, quotes, and key phrases when relevant
             - Tag ALL users when mentioning them (e.g., @972536150150)
             - Mention timing/chronology when it adds context
-            - Be detailed and informative while staying focused on relevance
             - Include any action items, decisions made, or follow-ups needed
-            - Highlight what was learned or discovered today
             - End with a "📝 Summary" section of key takeaways
-            - If space permits, add a "📝 General Highlights" section with brief mentions of other topics
-
-            FORMATTING: Use WhatsApp formatting: *bold* for headers/emphasis, _italic_ for quotes, emojis for organization, bullet points for lists.
+    
+            FORMATTING: Your output is a WhatsApp message! *bold* for headers/emphasis, _italic_ for quotes, emojis for organization, bullet points for lists.
 
             QUALITY REQUIREMENTS:
             - Be thorough and comprehensive - include ALL important content
@@ -134,7 +131,7 @@ class Router(BaseHandler):
             - Maintain readability and clear organization
             - Use A LOT of emojis and formatting to improve readability
             - You MUST respond with the same language as the request
-            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1000 characters for most summaries. If there's very little content, be brief. If there's a lot of important content, be thorough but well-organized.
+            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1000 characters for most summaries so words don't get cut in the middle of the output prompt.
             - GENERAL HIGHLIGHTS: Only include if there's space and only in a summarized, non-specific way
             """,
             output_type=str,
