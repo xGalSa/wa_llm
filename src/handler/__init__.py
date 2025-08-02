@@ -29,9 +29,6 @@ class MessageHandler(BaseHandler):
             session, whatsapp, embedding_client
         )
         super().__init__(session, whatsapp, embedding_client)
-        
-        # Use global variable instead of instance variable
-        global _bot_access_enabled
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
         print("=== MESSAGE HANDLER START ===")
@@ -76,9 +73,10 @@ class MessageHandler(BaseHandler):
             if message.has_mentioned(my_jid):
                 print("Bot was mentioned!")
                 
+                global _bot_access_enabled
+
                 # Admin command - check if message contains "allow"
                 if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
-                    global _bot_access_enabled
                     _bot_access_enabled = not _bot_access_enabled
                     await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
                     return
