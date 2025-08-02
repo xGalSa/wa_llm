@@ -72,27 +72,36 @@ class Router(BaseHandler):
 
     async def summarize(self, message: Message):
         today_start = datetime.combine(date.today(), datetime.min.time())
+        my_jid = await self.whatsapp.get_my_jid()
         stmt = (
             select(Message)
-            .where(Message.chat_jid == message.chat_jid)
-            .where(Message.timestamp >= today_start)
-            .order_by(desc(Message.timestamp))
-            .limit(100)  # Capture more messages for better filtering
+            .where(Message.chat_jid == message.chat_jid) # From the same group
+            .where(Message.timestamp >= today_start) # From today
+            .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
+            .order_by(desc(Message.timestamp)) # Newest to oldest
+            .limit(300)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
 
-        if len(messages) > 150:
-            # For very active groups, focus on the most recent important messages
-            messages = messages[-150:]
+        if len(messages) > 50:
+            await self.send_message(
+                message.chat_jid,
+                f"מעבד {len(messages)} הודעות... זה יכול לקחת דקה.",
+                message.message_id,
+            )
+
 
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
-            system_prompt="""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
+            system_prompt=f"""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
+
+            CURRENT TIME CONTEXT: It is now {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (local time).
+            Messages from earlier today may be outdated if they've been superseded by newer information.
 
             CONTEXT: You are summarizing a military/educational group chat. Focus on operational, educational, and organizational content.
 
-            FILTERING CRITERIA - Only include content that is:
+            PRIORITY CONTENT - Include these with full details:
             - Important decisions, announcements, or action items
             - New information learned or insights gained
             - Relevant for future reference or follow-up
@@ -104,6 +113,10 @@ class Router(BaseHandler):
             - Educational content or learning moments
             - Administrative announcements or procedures
 
+            GENERAL HIGHLIGHTS - Include these ONLY if space permits (keep brief and general):
+            - Personal updates (summarize as "personal updates shared")
+            - Light discussions (summarize as "discussed [general topic]")
+
             EXCLUDE:
             - Casual small talk, greetings, or social pleasantries
             - Irrelevant jokes or memes
@@ -111,6 +124,7 @@ class Router(BaseHandler):
             - Repetitive or redundant discussions
             - Temporary or time-sensitive information that's no longer relevant
             - System messages or technical errors
+            - Completely off-topic content
 
             SUMMARY STRUCTURE:
             - Start with: "📋 **Comprehensive Summary of Today's Important Discussions**"
@@ -118,24 +132,34 @@ class Router(BaseHandler):
             - Include specific details, quotes, and key phrases when relevant
             - Tag ALL users when mentioning them (e.g., @972536150150)
             - Mention timing/chronology when it adds context
-            - Be as detailed and informative as possible while staying focused on relevance
+            - Be detailed and informative while staying focused on relevance
             - Include any action items, decisions made, or follow-ups needed
             - Highlight what was learned or discovered today
             - End with a "📝 Summary" section of key takeaways
+            - If space permits, add a "📝 General Highlights" section with brief mentions of other topics
 
             QUALITY REQUIREMENTS:
             - Be thorough and comprehensive - include ALL important content
             - Focus on lasting value and future relevance
             - Maintain readability and clear organization
-            - Use emojis and formatting to improve readability
+            - Use A LOT of emojis and formatting to improve readability
             - You MUST respond with the same language as the request
+            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1000 words for most summaries. If there's very little content, be brief. If there's a lot of important content, be thorough but well-organized.
+            - GENERAL HIGHLIGHTS: Only include if there's space and only in a summarized, non-specific way
             """,
             output_type=str,
+            max_tokens=25000,
         )
 
         response = await agent.run(
             f"@{parse_jid(message.sender_jid).user}: {message.text}\n\n # History:\n {chat2text(messages)}"
         )
+
+        # If pydantic_ai provides usage info
+        if hasattr(response, 'usage'):
+            logger.info(f"Tokens used: {response.usage}")
+            print(f"Tokens used: {response.usage}")
+
         await self.send_message(
             message.chat_jid,
             response.data,
