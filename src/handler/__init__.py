@@ -142,35 +142,70 @@ class MessageHandler(BaseHandler):
             my_jid = await self.whatsapp.get_my_jid()
             bot_phone = my_jid.user
             
-            # Get all groups and find this one
-            groups_response = await self.whatsapp.get_user_groups()
+            # Extract group ID from the chat JID (remove @g.us suffix)
+            group_id = message.chat_jid.split('@')[0]
             
-            # Find our group
-            for group in groups_response.results.data:
-                if group.JID == message.chat_jid:
-                    # Tag everyone except the bot
-                    tagged_message = ""
-                    for participant in group.Participants:
-                        phone = participant.JID.split('@')[0]
-                        if phone != bot_phone:  # Skip bot
-                            tagged_message += f"@{phone} "
-                    
-                    await self.send_message(
-                        message.chat_jid,
-                        tagged_message.strip(),
-                        message.message_id,
-                    )
-                    return
-                    
-            # Fallback
-            await self.send_message(
-                message.chat_jid,
-                "📢 כולם מוזמנים! 🎉",
-                message.message_id,
-            )
+            print(f"Getting participants for group: {group_id}")
+            
+            # Get participants directly for this specific group
+            participants_response = await self.whatsapp.get_group_participants(group_id)
+            
+            print(f"Participants response: {participants_response}")
+            
+            # Create a message with all participants tagged (excluding bot)
+            tagged_message = ""
+            
+            # The response structure might vary, let's handle different cases
+            participants = []
+            if isinstance(participants_response, dict):
+                if 'results' in participants_response and participants_response['results']:
+                    participants = participants_response['results']
+                elif 'data' in participants_response:
+                    participants = participants_response['data']
+                elif 'participants' in participants_response:
+                    participants = participants_response['participants']
+                else:
+                    participants = participants_response
+            
+            for participant in participants:
+                print(f"Participant data: {participant}")
+                
+                # Extract phone number - try different possible fields
+                phone = None
+                if isinstance(participant, dict):
+                    if 'JID' in participant and participant['JID']:
+                        jid = participant['JID']
+                        if '@' in jid:
+                            phone = jid.split('@')[0]
+                    elif 'phone' in participant:
+                        phone = participant['phone']
+                    elif 'user' in participant:
+                        phone = participant['user']
+                
+                if phone and phone != bot_phone:  # Skip bot
+                    tagged_message += f"@{phone} "
+                    print(f"Added: @{phone}")
+            
+            # Send the tagged message
+            if tagged_message.strip():
+                print(f"Sending: {tagged_message.strip()}")
+                await self.send_message(
+                    message.chat_jid,
+                    tagged_message.strip(),
+                    message.message_id,
+                )
+            else:
+                # If no participants found (only bot in group)
+                await self.send_message(
+                    message.chat_jid,
+                    "📢 כולם מוזמנים! 🎉",
+                    message.message_id,
+                )
                 
         except Exception as e:
             print(f"Error tagging participants: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             await self.send_message(
                 message.chat_jid,
                 "📢 כולם מוזמנים!",
