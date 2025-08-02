@@ -25,7 +25,8 @@ class KnowledgeBaseAnswers(BaseHandler):
     async def __call__(self, message: Message):
         # Ensure message.text is not None before passing to generation_agent
         if message.text is None:
-            logger.warning(f"Received message with no text from {message.sender_jid}")
+            # Remove sender logging for privacy
+            # logger.warning(f"Received message with no text from {message.sender_jid}")
             return
         # get the last 7 messages
         stmt = (
@@ -86,19 +87,20 @@ class KnowledgeBaseAnswers(BaseHandler):
         generation_response = await self.generation_agent(
             message.text, similar_topics, message.sender_jid, history
         )
-        logger.info(
-            "RAG Query Results:\n"
-            f"Sender: {sender_number}\n"
-            f"Question: {message.text}\n"
-            f"Rephrased Question: {rephrased_response.output}\n"
-            f"Chat JID: {message.chat_jid}\n"
-            f"Retrieved Topics: {len(similar_topics)}\n"
-            f"Similarity Scores: {similar_topics_distances}\n"
-            "Topics:\n"
-            + "\n".join(f"- {topic[:100]}..." for topic in similar_topics)
-            + "\n"
-            f"Generated Response: {generation_response.output}"
-        )
+        # Remove privacy-sensitive logging
+        # logger.info(
+        #     "RAG Query Results:\n"
+        #     f"Sender: {sender_number}\n"
+        #     f"Question: {message.text}\n"
+        #     f"Rephrased Question: {rephrased_response.output}\n"
+        #     f"Chat JID: {message.chat_jid}\n"
+        #     f"Retrieved Topics: {len(similar_topics)}\n"
+        #     f"Similarity Scores: {similar_topics_distances}\n"
+        #     "Topics:\n"
+        #     + "\n".join(f"- {topic[:100]}..." for topic in similar_topics)
+        #     + "\n"
+        #     f"Generated Response: {generation_response.output}"
+        # )
 
         await self.send_message(
             message.chat_jid,

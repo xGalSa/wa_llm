@@ -22,16 +22,16 @@ async def webhook(
         Simple "ok" response to acknowledge receipt
     """
     try:
-        # Add comprehensive debug logging
-        print(f"=== WEBHOOK RECEIVED ===")
-        print(f"From: {payload.from_}")
-        print(f"Message text: {payload.message.text if payload.message else 'No message'}")
+        # Remove privacy-sensitive logging
+        # print(f"=== WEBHOOK RECEIVED ===")
+        # print(f"From: {payload.from_}")
+        # print(f"Message text: {payload.message.text if payload.message else 'No message'}")
         
         # Only process messages that have a sender (from_ field)
         if payload.from_:
-            print("Calling handler...")
+            # print("Calling handler...")
             await handler(payload)
-            print("=== HANDLER COMPLETED ===")
+            # print("=== HANDLER COMPLETED ===")
         return "ok"
     except Exception as e:
         print(f"Webhook error: {e}")

@@ -40,10 +40,10 @@ class MessageHandler(BaseHandler):
         
         try:
             message = await self.store_message(payload)
-            print(f"Message stored: {message is not None}")
-            print(f"Message text: {message.text if message else 'None'}")
-            print(f"Message sender: {message.sender_jid if message else 'None'}")
-            print(f"Message group: {message.group_jid if message else 'None'}")
+            # print(f"Message stored: {message is not None}")
+            # Remove message text logging for privacy
+            # Remove sender logging for privacy
+            # Remove group logging for privacy
 
             if (
                 message
@@ -58,10 +58,11 @@ class MessageHandler(BaseHandler):
                 print("No message or no text - returning")
                 return
 
-            if message.sender_jid.endswith("@lid"):
-                logging.info(
-                    f"Received message from {message.sender_jid}: {payload.model_dump_json()}"
-                )
+            # Remove detailed message logging for privacy
+            # if message.sender_jid.endswith("@lid"):
+            #     logging.info(
+            #         f"Received message from {message.sender_jid}: {payload.model_dump_json()}"
+            #     )
 
             # Update phone number database when messages come in
             await self.update_phone_database(message)
@@ -79,9 +80,9 @@ class MessageHandler(BaseHandler):
 
             print("Checking if bot was mentioned...")
             my_jid = await self.whatsapp.get_my_jid()
-            print(f"My JID: {my_jid}")
-            print(f"Message text: {message.text}")
-            print(f"Looking for: @{my_jid.user}")
+            # Remove JID logging for privacy
+            # Remove message text logging for privacy
+            # Remove bot mention search logging for privacy
             
             # If bot was mentioned
             if message.has_mentioned(my_jid):
@@ -156,7 +157,8 @@ class MessageHandler(BaseHandler):
                 
                 # Add phone number to the group's set
                 _group_phone_numbers[group_id].add(phone)
-                logger.info(f"Updated phone database for group {group_id}: {phone}")
+                # Remove logging for privacy
+                # logger.info(f"Updated phone database for group {group_id}: {phone}")
                 
         except Exception as e:
             logger.error(f"Error updating phone database: {e}")
@@ -175,20 +177,24 @@ class MessageHandler(BaseHandler):
             # Get phone numbers from our database
             if group_id in _group_phone_numbers:
                 phone_numbers = _group_phone_numbers[group_id]
-                logger.info(f"Found {len(phone_numbers)} phone numbers in database for group {group_id}")
+                # Remove logging for privacy
+                # logger.info(f"Found {len(phone_numbers)} phone numbers in database for group {group_id}")
                 
                 # Tag everyone except the bot
                 tagged_message = ""
                 for phone in phone_numbers:
                     if phone != bot_phone:
                         tagged_message += f"@{phone} "
-                        logger.info(f"Added phone from database: {phone}")
+                        # Remove logging for privacy
+                        # logger.info(f"Added phone from database: {phone}")
                 
                 if tagged_message.strip():
                     await self.send_message(message.chat_jid, tagged_message.strip(), message.message_id)
                     return
             else:
-                logger.info(f"No phone numbers found in database for group {group_id}")
+                # Remove logging for privacy
+                # logger.info(f"No phone numbers found in database for group {group_id}")
+                pass
                     
         except Exception as e:
             logger.error(f"Error tagging participants: {e}")
