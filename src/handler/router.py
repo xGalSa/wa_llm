@@ -91,32 +91,6 @@ class Router(BaseHandler):
                 message.message_id,
             )
 
-
-        agent = Agent(
-            model="anthropic:claude-4-sonnet-20250514",
-            system_prompt=f"""Create a comprehensive summary of TODAY's important discussions from this military/educational WhatsApp group chat. Output is a WhatsApp message.
-
-            Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} .
-            Messages from earlier today may be outdated if superseded by newer information.
-
-            INCLUDE: Important decisions, announcements, action items, new information, key discussions, questions/answers, achievements, operational updates, educational content. Be detailed and informative while staying focused on relevance. Include any action items, decisions made, or follow-ups needed.
-
-            EXCLUDE: Small talk, jokes, personal conversations, repetitive discussions. temporary or time-sensitive information that's no longer relevant.
-
-            STRUCTURE:
-            *Today's Summary*
-            *Key Decisions*
-            📚 *New Information* 
-            ⚡ *Action Items and follow-ups*
-            📝 *Summary*
-
-            Tag users with @number. Respond in the same language as the request. Aim for 1200 words.
-            """,
-            output_type=str,
-            max_tokens=25000,
-        )
-
-
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
             system_prompt=f"""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
