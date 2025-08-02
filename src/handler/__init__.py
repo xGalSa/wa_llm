@@ -141,31 +141,38 @@ class MessageHandler(BaseHandler):
             # Extract group ID from the chat JID
             group_id = message.chat_jid.split('@')[0]
             
-            # Get participants from the API
-            participants_data = await self.whatsapp.get_group_participants(group_id)
+            # Get all user groups and find the specific group
+            groups_response = await self.whatsapp.get_user_groups()
             
-            # Get the participants list
-            participants = []
-            if isinstance(participants_data, list):
-                participants = participants_data
-            elif isinstance(participants_data, dict) and 'participants' in participants_data:
-                participants = participants_data['participants']
+            # Find the specific group
+            target_group = None
+            for group in groups_response.results.data:
+                if group.JID.split('@')[0] == group_id:
+                    target_group = group
+                    break
             
-            tagged_message = ""
-            if participants:
-                for participant in participants:
-                    if isinstance(participant, dict):
-                        phone = participant.get('JID') or participant.get('phone')
-                        if phone and '@' in phone:
-                            phone_number = phone.split('@')[0]
-                            tagged_message += f"@{phone_number} "
-            
-            # Send the message (even if empty, it will just be a blank message)
-            await self.send_message(
-                message.chat_jid,
-                tagged_message,
-                message.message_id,
-            )
+            if target_group and target_group.Participants:
+                # Create a message with all participants tagged
+                tagged_message = ""
+                
+                for participant in target_group.Participants:
+                    if participant.JID and '@' in participant.JID:
+                        phone_number = participant.JID.split('@')[0]
+                        tagged_message += f"@{phone_number} "
+                
+                # Send the tagged message
+                await self.send_message(
+                    message.chat_jid,
+                    tagged_message,
+                    message.message_id,
+                )
+            else:
+                # Fallback if no participants found
+                await self.send_message(
+                    message.chat_jid,
+                    "📢 כולם מוזמנים! 🎉",
+                    message.message_id,
+                )
                 
         except Exception as e:
             print(f"Error tagging participants: {e}")
