@@ -11,6 +11,7 @@ from models import (
 )
 from whatsapp import WhatsAppClient
 from .base_handler import BaseHandler
+from whatsapp.models import Message
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,12 @@ class MessageHandler(BaseHandler):
             # TEMPORARILY DISABLED FOR TESTING
             # if message and message.group and not message.group.managed:
             #     return
+
+            # NEW FEATURE: Check for @כולם mentions
+            if "@כולם" in message.text:
+                print("Found @כולם mention - tagging all participants")
+                await self.tag_all_participants(message)
+                return  # Exit early, don't process bot mentions
 
             print("Checking if bot was mentioned...")
             my_jid = await self.whatsapp.get_my_jid()
@@ -123,3 +130,47 @@ class MessageHandler(BaseHandler):
         except Exception as exc:
             # Catch any other unexpected errors
             logger.error(f"Unexpected error forwarding message to {forward_url}: {exc}")
+
+    async def tag_all_participants(self, message: Message):
+        """
+        Tag all participants in the group when @כולם is mentioned
+        """
+        try:
+            # Extract group ID from the chat JID
+            group_id = message.chat_jid.split('@')[0]
+            
+            # Get participants from the API
+            participants_data = await self.whatsapp.get_group_participants(group_id)
+            
+            # Get the participants list
+            participants = []
+            if isinstance(participants_data, list):
+                participants = participants_data
+            elif isinstance(participants_data, dict) and 'participants' in participants_data:
+                participants = participants_data['participants']
+            
+            if participants:
+                # Create a message with all participants tagged
+                tagged_message = ""
+                
+                for participant in participants:
+                    if isinstance(participant, dict):
+                        phone = participant.get('JID') or participant.get('phone')
+                        if phone and '@' in phone:
+                            phone_number = phone.split('@')[0]
+                            tagged_message += f"@{phone_number} "
+                
+                # Send the tagged message
+                await self.send_message(
+                    message.chat_jid,
+                    tagged_message,
+                    message.message_id,
+                )
+                
+        except Exception as e:
+            print(f"Error tagging participants: {e}")
+            await self.send_message(
+                message.chat_jid,
+                "📢 כולם מוזמנים!",
+                message.message_id,
+            )
