@@ -153,14 +153,23 @@ class MessageHandler(BaseHandler):
             )
             
             if target_group:
+                logger.info(f"Group participants: {[(p.JID, p.LID) for p in target_group.Participants]}")
+                
                 # Tag everyone except the bot
                 tagged_message = ""
                 for participant in target_group.Participants:
+                    logger.info(f"Processing participant: JID={participant.JID}, LID={participant.LID}")
+                    
                     # Only tag participants with actual phone numbers
                     if participant.JID.endswith('@s.whatsapp.net') or participant.JID.endswith('@c.us'):
                         phone = participant.JID.split('@')[0]
                         if phone != bot_phone:
                             tagged_message += f"@{phone} "
+                            logger.info(f"Added phone: {phone}")
+                    else:
+                        logger.info(f"Skipped non-phone participant: {participant.JID}")
+                
+                logger.info(f"Final message: {tagged_message}")
                 
                 # Send either the tagged message or fallback
                 response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
