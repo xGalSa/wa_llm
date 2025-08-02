@@ -8,10 +8,10 @@ from handler.router import Router
 from handler.whatsapp_group_link_spam import WhatsappGroupLinkSpamHandler
 from models import (
     WhatsAppWebhookPayload,
+    Message,
 )
 from whatsapp import WhatsAppClient
 from .base_handler import BaseHandler
-from whatsapp.models import Message
 
 logger = logging.getLogger(__name__)
 
