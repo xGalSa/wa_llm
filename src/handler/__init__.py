@@ -139,51 +139,75 @@ class MessageHandler(BaseHandler):
         Tag all participants in the group when @כולם is mentioned
         """
         try:
+            logger.info("=== STARTING @כולם TAG ALL PARTICIPANTS ===")
+            logger.info(f"Message chat_jid: {message.chat_jid}")
+            
             # Get bot's phone number to exclude it
             my_jid = await self.whatsapp.get_my_jid()
             bot_phone = my_jid.user
+            logger.info(f"Bot JID: {my_jid}")
             logger.info(f"Bot phone: {bot_phone}")
             
             # Get all groups and find this one
+            logger.info("Getting user groups...")
             groups_response = await self.whatsapp.get_user_groups()
+            logger.info(f"Total groups found: {len(groups_response.results.data)}")
+            
+            # Log all groups for debugging
+            for i, group in enumerate(groups_response.results.data):
+                logger.info(f"Group {i}: JID={group.JID}, Name={group.Name}")
             
             # Find the target group first
+            logger.info(f"Looking for group with JID: {message.chat_jid}")
             target_group = next(
                 (group for group in groups_response.results.data if group.JID == message.chat_jid),
                 None
             )
             
             if target_group:
-                logger.info(f"Found group with {len(target_group.Participants)} participants")
+                logger.info(f"✅ Found target group: {target_group.Name}")
+                logger.info(f"Group has {len(target_group.Participants)} participants")
+                
                 # Now iterate through participants of the found group
                 tagged_message = ""
-                for participant in target_group.Participants:
-                    logger.info(f"Participant JID: '{participant.JID}'")
+                for i, participant in enumerate(target_group.Participants):
+                    logger.info(f"--- Participant {i+1} ---")
+                    logger.info(f"  Raw JID: '{participant.JID}'")
+                    logger.info(f"  LID: '{participant.LID}'")
+                    logger.info(f"  IsAdmin: {participant.IsAdmin}")
                     
                     # Try different ways to extract phone number
+                    phone = None
                     if '@' in participant.JID:
                         phone = participant.JID.split('@')[0]
-                        logger.info(f"Extracted phone from JID: '{phone}'")
+                        logger.info(f"  Extracted phone from JID: '{phone}'")
                     else:
                         phone = participant.JID
-                        logger.info(f"Using full JID as phone: '{phone}'")
+                        logger.info(f"  Using full JID as phone: '{phone}'")
                     
+                    logger.info(f"  Comparing: '{phone}' vs bot phone '{bot_phone}'")
                     if phone != bot_phone:
                         tagged_message += f"@{phone} "
-                        logger.info(f"Added to message: @{phone}")
+                        logger.info(f"  ✅ Added to message: @{phone}")
                     else:
-                        logger.info(f"Skipped bot: {phone}")
+                        logger.info(f"  ❌ Skipped bot: {phone}")
                 
                 logger.info(f"Final tagged message: '{tagged_message.strip()}'")
                 
                 # Send either the tagged message or fallback
                 response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
+                logger.info(f"Sending response: '{response_text}'")
                 await self.send_message(message.chat_jid, response_text, message.message_id)
+                logger.info("✅ Message sent successfully")
                 return
+            else:
+                logger.error(f"❌ Target group not found! Looking for: {message.chat_jid}")
                     
         except Exception as e:
-            logger.error(f"Error tagging participants: {e}")
+            logger.error(f"❌ Error tagging participants: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Fallback for both exception and group not found
+        logger.info("Sending fallback message")
         await self.send_message(message.chat_jid, "📢 כולם מוזמנים!", message.message_id)
+        logger.info("=== ENDING @כולם TAG ALL PARTICIPANTS ===")
