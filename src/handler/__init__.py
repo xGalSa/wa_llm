@@ -27,6 +27,9 @@ class MessageHandler(BaseHandler):
             session, whatsapp, embedding_client
         )
         super().__init__(session, whatsapp, embedding_client)
+        
+        # Add this instance variable for in-memory storage
+        self.access_enabled = False  # Default: only admin can access
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
         print("=== MESSAGE HANDLER START ===")
@@ -70,20 +73,18 @@ class MessageHandler(BaseHandler):
             # If bot was mentioned
             if message.has_mentioned(my_jid):
                 print("Bot was mentioned!")
-                # Check if the message is from the authorized user (972532741041)
-                if message.sender_jid.startswith("972532741041"):
-                    print("Authorized user - calling router")
-                    # Full functionality for the makas
+                
+                # Admin command
+                if message.sender_jid.startswith("972532741041") and message.text.lower().strip() == "allow":
+                    self.access_enabled = not self.access_enabled
+                    await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעלת' if self.access_enabled else 'מושבתת'}", message.message_id)
+                    return
+                
+                # Simple access check - either access is enabled OR user is admin
+                if self.access_enabled or message.sender_jid.startswith("972532741041"):
                     await self.router(message)
-                    print("Router completed")
                 else:
-                    print("Unauthorized user - sending restricted message")
-                    # Predefined message for everyone else
-                    await self.send_message(
-                        message.chat_jid,
-                        "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי",
-                        message.message_id,
-                    )
+                    await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
             else:
                 print("Bot was not mentioned")
 

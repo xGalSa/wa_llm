@@ -32,7 +32,7 @@ class KnowledgeBaseAnswers(BaseHandler):
             select(Message)
             .where(Message.chat_jid == message.chat_jid)
             .order_by(desc(Message.timestamp))
-            .limit(7)
+            .limit(400)
         )
         res = await self.session.exec(stmt)
         history: list[Message] = list(res.all())
@@ -117,14 +117,19 @@ class KnowledgeBaseAnswers(BaseHandler):
     ) -> AgentRunResult[str]:
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
-            system_prompt="""Based on the topics attached, write a response to the query.
-            - Write a casual direct response to the query. no need to repeat the query.
-            - Answer in the same language as the query.
-            - Only answer from the topics attached, no other text.
-            - If the related topics are not relevant or not found, please let the user know.
-            - When answering, provide a complete answer to the message - telling the user everything they need to know. BUT not too much! remember - it's a chat.
-            - Attached is the recent chat history. You can use it to understand the context of the query. If the context is not clear or irrelevant to the query, ignore it.
-            - Please do tag users while talking about them (e.g., @972536150150). ONLY answer with the new phrased query, no other text.""",
+            system_prompt="""Answer the user's question based on the attached knowledge base topics.
+
+            FORMATTING: Use WhatsApp formatting - *bold* for emphasis, _italic_ for quotes, emojis for organization.
+
+            GUIDELINES:
+            - Answer in the same language as the question
+            - Be conversational and concise (this is a WhatsApp chat)
+            - Only use information from the attached topics
+            - Tag users with @number when mentioning them
+            - If no relevant topics found, say "לא מצאתי מידע רלוונטי על זה" (Hebrew) or "I couldn't find relevant information about this" (English)
+
+            CONTEXT: Recent chat history is provided for context. Use it if relevant, ignore if not.""",
+            max_tokens=25000,
         )
 
         prompt_template = f"""
@@ -156,6 +161,7 @@ class KnowledgeBaseAnswers(BaseHandler):
             - Your name is @{my_jid}
             - Attached is the recent chat history. You can use it to understand the context of the query. If the context is not clear or irrelevant to the query, ignore it.
             - ONLY answer with the new phrased query, no other text!""",
+            max_tokens=25000,
         )
 
         # We obviously need to translate the question and turn the question vebality to a title / summary text to make it closer to the questions in the rag
