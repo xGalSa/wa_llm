@@ -14,6 +14,8 @@ from .base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
+# Global variable to store access state
+_bot_access_enabled = False
 
 class MessageHandler(BaseHandler):
     def __init__(
@@ -28,8 +30,8 @@ class MessageHandler(BaseHandler):
         )
         super().__init__(session, whatsapp, embedding_client)
         
-        # Add this instance variable for in-memory storage
-        self.access_enabled = False  # Default: only admin can access
+        # Use global variable instead of instance variable
+        global _bot_access_enabled
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
         print("=== MESSAGE HANDLER START ===")
@@ -76,12 +78,13 @@ class MessageHandler(BaseHandler):
                 
                 # Admin command - check if message contains "allow"
                 if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
-                    self.access_enabled = not self.access_enabled
-                    await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעל' if self.access_enabled else 'מושבתת'}", message.message_id)
+                    global _bot_access_enabled
+                    _bot_access_enabled = not _bot_access_enabled
+                    await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
                     return
                 
                 # Simple access check - either access is enabled OR user is admin
-                if self.access_enabled or message.sender_jid.startswith("972532741041"):
+                if _bot_access_enabled or message.sender_jid.startswith("972532741041"):
                     await self.router(message)
                 else:
                     await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
