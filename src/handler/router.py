@@ -94,6 +94,31 @@ class Router(BaseHandler):
 
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
+            system_prompt=f"""Create a comprehensive summary of TODAY's important discussions from this military/educational WhatsApp group chat. Output is a WhatsApp message.
+
+            Current time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} .
+            Messages from earlier today may be outdated if superseded by newer information.
+
+            INCLUDE: Important decisions, announcements, action items, new information, key discussions, questions/answers, achievements, operational updates, educational content. Be detailed and informative while staying focused on relevance. Include any action items, decisions made, or follow-ups needed.
+
+            EXCLUDE: Small talk, jokes, personal conversations, repetitive discussions. temporary or time-sensitive information that's no longer relevant.
+
+            STRUCTURE:
+            *Today's Summary*
+            *Key Decisions*
+            📚 *New Information* 
+            ⚡ *Action Items and follow-ups*
+            📝 *Summary*
+
+            Tag users with @number. Respond in the same language as the request. Aim for 1200 words.
+            """,
+            output_type=str,
+            max_tokens=25000,
+        )
+
+
+        agent = Agent(
+            model="anthropic:claude-4-sonnet-20250514",
             system_prompt=f"""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
 
             CURRENT TIME CONTEXT: It is now {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (local time).
@@ -108,26 +133,15 @@ class Router(BaseHandler):
             - Significant developments or changes
             - Key discussions that impact the group or individuals
             - Important questions asked and their answers
-            - Notable achievements or progress updates
-            - Operational updates or status changes
-            - Educational content or learning moments
             - Administrative announcements or procedures
 
-            GENERAL HIGHLIGHTS - Include these ONLY if space permits (keep brief and general):
-            - Personal updates (summarize as "personal updates shared")
-            - Light discussions (summarize as "discussed [general topic]")
-
             EXCLUDE:
-            - Casual small talk, greetings, or social pleasantries
-            - Irrelevant jokes or memes
-            - Personal conversations not relevant to the group
+            - Casual small talk, greetings, or social pleasantries, irrelevant jokes or memes
             - Repetitive or redundant discussions
             - Temporary or time-sensitive information that's no longer relevant
-            - System messages or technical errors
-            - Completely off-topic content
 
             SUMMARY STRUCTURE:
-            - Start with: "📋 **Comprehensive Summary of Today's Important Discussions**"
+            - Start with: "📋 *Comprehensive Summary of Today's Important Discussions*"
             - Use clear section headers like "🎯 Key Decisions", "📚 New Information", "⚡ Action Items"
             - Include specific details, quotes, and key phrases when relevant
             - Tag ALL users when mentioning them (e.g., @972536150150)
@@ -138,13 +152,15 @@ class Router(BaseHandler):
             - End with a "📝 Summary" section of key takeaways
             - If space permits, add a "📝 General Highlights" section with brief mentions of other topics
 
+            FORMATTING: Use WhatsApp formatting: *bold* for headers/emphasis, _italic_ for quotes, emojis for organization, bullet points for lists.
+
             QUALITY REQUIREMENTS:
             - Be thorough and comprehensive - include ALL important content
             - Focus on lasting value and future relevance
             - Maintain readability and clear organization
             - Use A LOT of emojis and formatting to improve readability
             - You MUST respond with the same language as the request
-            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1000 words for most summaries. If there's very little content, be brief. If there's a lot of important content, be thorough but well-organized.
+            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1000 characters for most summaries. If there's very little content, be brief. If there's a lot of important content, be thorough but well-organized.
             - GENERAL HIGHLIGHTS: Only include if there's space and only in a summarized, non-specific way
             """,
             output_type=str,
