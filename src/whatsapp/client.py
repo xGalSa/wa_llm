@@ -380,8 +380,3 @@ class WhatsAppClient:
             json=UnfollowNewsletterRequest(newsletter_id=newsletter_id),
         )
         return GenericResponse.model_validate_json(response.content)
-
-    async def get_group_participants(self, group_id: str) -> dict:
-        """Get all participants in a group"""
-        response = await self._get(f"/group/{group_id}/participants")
-        return response.json()
