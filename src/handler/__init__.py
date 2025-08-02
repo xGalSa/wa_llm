@@ -77,7 +77,7 @@ class MessageHandler(BaseHandler):
                 # Admin command - check if message contains "allow"
                 if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
                     self.access_enabled = not self.access_enabled
-                    await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעלת' if self.access_enabled else 'מושבתת'}", message.message_id)
+                    await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעל' if self.access_enabled else 'מושבתת'}", message.message_id)
                     return
                 
                 # Simple access check - either access is enabled OR user is admin
