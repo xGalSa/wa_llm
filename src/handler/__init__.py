@@ -1,5 +1,6 @@
 import logging
 import httpx
+import traceback
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
@@ -141,6 +142,7 @@ class MessageHandler(BaseHandler):
             # Get bot's phone number to exclude it
             my_jid = await self.whatsapp.get_my_jid()
             bot_phone = my_jid.user
+            logger.info(f"Bot phone: {bot_phone}")
             
             # Get all groups and find this one
             groups_response = await self.whatsapp.get_user_groups()
@@ -152,12 +154,27 @@ class MessageHandler(BaseHandler):
             )
             
             if target_group:
+                logger.info(f"Found group with {len(target_group.Participants)} participants")
                 # Now iterate through participants of the found group
                 tagged_message = ""
                 for participant in target_group.Participants:
-                    phone = participant.JID.split('@')[0]
+                    logger.info(f"Participant JID: '{participant.JID}'")
+                    
+                    # Try different ways to extract phone number
+                    if '@' in participant.JID:
+                        phone = participant.JID.split('@')[0]
+                        logger.info(f"Extracted phone from JID: '{phone}'")
+                    else:
+                        phone = participant.JID
+                        logger.info(f"Using full JID as phone: '{phone}'")
+                    
                     if phone != bot_phone:
                         tagged_message += f"@{phone} "
+                        logger.info(f"Added to message: @{phone}")
+                    else:
+                        logger.info(f"Skipped bot: {phone}")
+                
+                logger.info(f"Final tagged message: '{tagged_message.strip()}'")
                 
                 # Send either the tagged message or fallback
                 response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
@@ -165,7 +182,8 @@ class MessageHandler(BaseHandler):
                 return
                     
         except Exception as e:
-            print(f"Error tagging participants: {e}")
+            logger.error(f"Error tagging participants: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
         
         # Fallback for both exception and group not found
         await self.send_message(message.chat_jid, "📢 כולם מוזמנים!", message.message_id)
