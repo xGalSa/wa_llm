@@ -151,23 +151,21 @@ class MessageHandler(BaseHandler):
             elif isinstance(participants_data, dict) and 'participants' in participants_data:
                 participants = participants_data['participants']
             
+            tagged_message = ""
             if participants:
-                # Create a message with all participants tagged
-                tagged_message = ""
-                
                 for participant in participants:
                     if isinstance(participant, dict):
                         phone = participant.get('JID') or participant.get('phone')
                         if phone and '@' in phone:
                             phone_number = phone.split('@')[0]
                             tagged_message += f"@{phone_number} "
-                
-                # Send the tagged message
-                await self.send_message(
-                    message.chat_jid,
-                    tagged_message,
-                    message.message_id,
-                )
+            
+            # Send the message (even if empty, it will just be a blank message)
+            await self.send_message(
+                message.chat_jid,
+                tagged_message,
+                message.message_id,
+            )
                 
         except Exception as e:
             print(f"Error tagging participants: {e}")
