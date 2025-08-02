@@ -79,7 +79,7 @@ class Router(BaseHandler):
             .where(Message.timestamp >= today_start) # From today
             .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
             .order_by(desc(Message.timestamp)) # Newest to oldest
-            .limit(300)  # Capture more messages for better filtering
+            .limit(200)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
@@ -91,7 +91,6 @@ class Router(BaseHandler):
                 message.message_id,
             )
 
-
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
             system_prompt=f"""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
@@ -99,7 +98,7 @@ class Router(BaseHandler):
             CURRENT TIME CONTEXT: It is now {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (local time).
             Messages from earlier today may be outdated if they've been superseded by newer information.
 
-            CONTEXT: You are summarizing a military/educational group chat. Focus on operational, educational, and organizational content.
+            CONTEXT: You are summarizing a military/educational group chat into a WhatsApp message. Focus on operational, educational, and organizational content.
 
             PRIORITY CONTENT - Include these with full details:
             - Important decisions, announcements, or action items
@@ -108,47 +107,35 @@ class Router(BaseHandler):
             - Significant developments or changes
             - Key discussions that impact the group or individuals
             - Important questions asked and their answers
-            - Notable achievements or progress updates
-            - Operational updates or status changes
-            - Educational content or learning moments
             - Administrative announcements or procedures
 
-            GENERAL HIGHLIGHTS - Include these ONLY if space permits (keep brief and general):
-            - Personal updates (summarize as "personal updates shared")
-            - Light discussions (summarize as "discussed [general topic]")
-
             EXCLUDE:
-            - Casual small talk, greetings, or social pleasantries
-            - Irrelevant jokes or memes
-            - Personal conversations not relevant to the group
-            - Repetitive or redundant discussions
+            - Casual small talk, greetings, or social pleasantries, irrelevant jokes or memes
+            - Repetitive or redundant discussions.
             - Temporary or time-sensitive information that's no longer relevant
-            - System messages or technical errors
-            - Completely off-topic content
 
             SUMMARY STRUCTURE:
-            - Start with: "📋 **Comprehensive Summary of Today's Important Discussions**"
+            - Start with: "📋 Comprehensive Summary of Today's Important Discussions"
             - Use clear section headers like "🎯 Key Decisions", "📚 New Information", "⚡ Action Items"
             - Include specific details, quotes, and key phrases when relevant
             - Tag ALL users when mentioning them (e.g., @972536150150)
             - Mention timing/chronology when it adds context
-            - Be detailed and informative while staying focused on relevance
             - Include any action items, decisions made, or follow-ups needed
-            - Highlight what was learned or discovered today
             - End with a "📝 Summary" section of key takeaways
-            - If space permits, add a "📝 General Highlights" section with brief mentions of other topics
+    
+            FORMATTING: Your output is a WhatsApp message! *bold* for headers/emphasis, _italic_ for quotes, emojis for organization, bullet points for lists.
 
             QUALITY REQUIREMENTS:
-            - Be thorough and comprehensive - include ALL important content
+            - Be thorough and comprehensive - include ALL important content. Don't get stuck on one topic
             - Focus on lasting value and future relevance
             - Maintain readability and clear organization
             - Use A LOT of emojis and formatting to improve readability
             - You MUST respond with the same language as the request
-            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1000 words for most summaries. If there's very little content, be brief. If there's a lot of important content, be thorough but well-organized.
+            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1200 characters for most summaries, but make sure words don't get cut in the middle of the output prompt.
             - GENERAL HIGHLIGHTS: Only include if there's space and only in a summarized, non-specific way
             """,
             output_type=str,
-            max_tokens=25000,
+            max_tokens=30000,
         )
 
         response = await agent.run(
@@ -176,6 +163,6 @@ class Router(BaseHandler):
     async def default_response(self, message):
         await self.send_message(
             message.chat_jid,
-            "I'm sorry, but I dont think this is something I can help with right now 😅.\n I can help catch up on the chat messages or answer questions based on the group's knowledge.",
+            "מצטער, אבל אני לא חושב שאני יכול לעזור עם זה כרגע 😅.\n אני יכול לעזור לך להתעדכן בהודעות הצ'אט או לענות על שאלות בהתבסס על הידע של הקבוצה.",
             message.message_id,
         )

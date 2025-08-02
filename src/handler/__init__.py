@@ -15,6 +15,8 @@ from whatsapp.models import Message
 
 logger = logging.getLogger(__name__)
 
+# Global variable to store access state
+_bot_access_enabled = False
 
 class MessageHandler(BaseHandler):
     def __init__(
@@ -77,20 +79,20 @@ class MessageHandler(BaseHandler):
             # If bot was mentioned
             if message.has_mentioned(my_jid):
                 print("Bot was mentioned!")
-                # Check if the message is from the authorized user (972532741041)
-                if message.sender_jid.startswith("972532741041"):
-                    print("Authorized user - calling router")
-                    # Full functionality for the makas
+                
+                global _bot_access_enabled
+
+                # Admin command - check if message contains "allow"
+                if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
+                    _bot_access_enabled = not _bot_access_enabled
+                    await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
+                    return
+                
+                # Simple access check - either access is enabled OR user is admin
+                if _bot_access_enabled or message.sender_jid.startswith("972532741041"):
                     await self.router(message)
-                    print("Router completed")
                 else:
-                    print("Unauthorized user - sending restricted message")
-                    # Predefined message for everyone else
-                    await self.send_message(
-                        message.chat_jid,
-                        "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי",
-                        message.message_id,
-                    )
+                    await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
             else:
                 print("Bot was not mentioned")
 

@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 from sqlalchemy import pool
 
@@ -6,7 +7,6 @@ from alembic import context
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from models import *  # noqa
 from sqlmodel import SQLModel
-from config import Settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -47,7 +47,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url") or Settings().db_uri
+    url = config.get_main_option("sqlalchemy.url") or os.getenv("DB_URI", "postgresql+asyncpg://user:password@postgres:5432/postgres")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -78,7 +78,9 @@ async def run_async_migrations():
     """
     configuration = config.get_section(config.config_ini_section)
     if not configuration.get("sqlalchemy.url"):
-        configuration["sqlalchemy.url"] = Settings().db_uri
+        # Use environment variable directly instead of Settings class to avoid validation issues
+        db_uri = os.getenv("DB_URI", "postgresql+asyncpg://user:password@postgres:5432/postgres")
+        configuration["sqlalchemy.url"] = db_uri
 
     connectable = async_engine_from_config(
         configuration,
