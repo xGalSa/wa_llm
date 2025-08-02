@@ -79,7 +79,7 @@ class Router(BaseHandler):
             .where(Message.timestamp >= today_start) # From today
             .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
             .order_by(desc(Message.timestamp)) # Newest to oldest
-            .limit(100)  # Capture more messages for better filtering
+            .limit(200)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
@@ -111,7 +111,7 @@ class Router(BaseHandler):
 
             EXCLUDE:
             - Casual small talk, greetings, or social pleasantries, irrelevant jokes or memes
-            - Repetitive or redundant discussions
+            - Repetitive or redundant discussions.
             - Temporary or time-sensitive information that's no longer relevant
 
             SUMMARY STRUCTURE:
@@ -126,16 +126,16 @@ class Router(BaseHandler):
             FORMATTING: Your output is a WhatsApp message! *bold* for headers/emphasis, _italic_ for quotes, emojis for organization, bullet points for lists.
 
             QUALITY REQUIREMENTS:
-            - Be thorough and comprehensive - include ALL important content
+            - Be thorough and comprehensive - include ALL important content. Don't get stuck on one topic
             - Focus on lasting value and future relevance
             - Maintain readability and clear organization
             - Use A LOT of emojis and formatting to improve readability
             - You MUST respond with the same language as the request
-            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1000 characters for most summaries so words don't get cut in the middle of the output prompt.
+            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1200 characters for most summaries, but make sure words don't get cut in the middle of the output prompt.
             - GENERAL HIGHLIGHTS: Only include if there's space and only in a summarized, non-specific way
             """,
             output_type=str,
-            max_tokens=25000,
+            max_tokens=30000,
         )
 
         response = await agent.run(
