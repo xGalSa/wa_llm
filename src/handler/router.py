@@ -79,7 +79,7 @@ class Router(BaseHandler):
             .where(Message.timestamp >= today_start) # From today
             .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
             .order_by(desc(Message.timestamp)) # Newest to oldest
-            .limit(300)  # Capture more messages for better filtering
+            .limit(100)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
         messages: list[Message] = res.all()
