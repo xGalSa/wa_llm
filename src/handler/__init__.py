@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Global variable to store access state
 _bot_access_enabled = False
 
+# Global dictionary to store phone numbers by group
+_group_phone_numbers = {}
+
 class MessageHandler(BaseHandler):
     def __init__(
         self,
@@ -59,6 +62,9 @@ class MessageHandler(BaseHandler):
                 logging.info(
                     f"Received message from {message.sender_jid}: {payload.model_dump_json()}"
                 )
+
+            # Update phone number database when messages come in
+            await self.update_phone_database(message)
 
             # ignore messages from unmanaged groups
             # TEMPORARILY DISABLED FOR TESTING
@@ -134,6 +140,27 @@ class MessageHandler(BaseHandler):
             # Catch any other unexpected errors
             logger.error(f"Unexpected error forwarding message to {forward_url}: {exc}")
 
+    async def update_phone_database(self, message: Message):
+        """
+        Update the phone number database when messages come in
+        """
+        try:
+            if message.sender_jid and '@' in message.sender_jid:
+                # Extract phone number from sender JID
+                phone = message.sender_jid.split('@')[0]
+                group_id = message.chat_jid
+                
+                # Initialize group dict if it doesn't exist
+                if group_id not in _group_phone_numbers:
+                    _group_phone_numbers[group_id] = set()
+                
+                # Add phone number to the group's set
+                _group_phone_numbers[group_id].add(phone)
+                logger.info(f"Updated phone database for group {group_id}: {phone}")
+                
+        except Exception as e:
+            logger.error(f"Error updating phone database: {e}")
+
     async def tag_all_participants(self, message: Message):
         """
         Tag all participants in the group when @כולם is mentioned
@@ -143,41 +170,28 @@ class MessageHandler(BaseHandler):
             my_jid = await self.whatsapp.get_my_jid()
             bot_phone = my_jid.user
             
-            # Get all groups and find this one
-            groups_response = await self.whatsapp.get_user_groups()
+            group_id = message.chat_jid
             
-            # Find the target group first
-            target_group = next(
-                (group for group in groups_response.results.data if group.JID == message.chat_jid),
-                None
-            )
-            
-            if target_group:
-                logger.info(f"Group participants: {[(p.JID, p.LID) for p in target_group.Participants]}")
+            # Get phone numbers from our database
+            if group_id in _group_phone_numbers:
+                phone_numbers = _group_phone_numbers[group_id]
+                logger.info(f"Found {len(phone_numbers)} phone numbers in database for group {group_id}")
                 
                 # Tag everyone except the bot
                 tagged_message = ""
-                for participant in target_group.Participants:
-                    logger.info(f"Processing participant: JID={participant.JID}, LID={participant.LID}")
-                    
-                    # Only tag participants with actual phone numbers
-                    if participant.JID.endswith('@s.whatsapp.net') or participant.JID.endswith('@c.us'):
-                        phone = participant.JID.split('@')[0]
-                        if phone != bot_phone:
-                            tagged_message += f"@{phone} "
-                            logger.info(f"Added phone: {phone}")
-                    else:
-                        logger.info(f"Skipped non-phone participant: {participant.JID}")
+                for phone in phone_numbers:
+                    if phone != bot_phone:
+                        tagged_message += f"@{phone} "
+                        logger.info(f"Added phone from database: {phone}")
                 
-                logger.info(f"Final message: {tagged_message}")
-                
-                # Send either the tagged message or fallback
-                response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
-                await self.send_message(message.chat_jid, response_text, message.message_id)
-                return
+                if tagged_message.strip():
+                    await self.send_message(message.chat_jid, tagged_message.strip(), message.message_id)
+                    return
+            else:
+                logger.info(f"No phone numbers found in database for group {group_id}")
                     
         except Exception as e:
             logger.error(f"Error tagging participants: {e}")
         
-        # Fallback
+        # Fallback if no phone numbers in database
         await self.send_message(message.chat_jid, "📢 כולם מוזמנים!", message.message_id)
