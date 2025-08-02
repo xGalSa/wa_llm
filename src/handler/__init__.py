@@ -138,41 +138,36 @@ class MessageHandler(BaseHandler):
         Tag all participants in the group when @כולם is mentioned
         """
         try:
-            # Extract group ID from the chat JID
-            group_id = message.chat_jid.split('@')[0]
+            # Get bot's phone number to exclude it
+            my_jid = await self.whatsapp.get_my_jid()
+            bot_phone = my_jid.user
             
-            # Get all user groups and find the specific group
+            # Get all groups and find this one
             groups_response = await self.whatsapp.get_user_groups()
             
-            # Find the specific group
-            target_group = None
+            # Find our group
             for group in groups_response.results.data:
-                if group.JID.split('@')[0] == group_id:
-                    target_group = group
-                    break
-            
-            if target_group and target_group.Participants:
-                # Create a message with all participants tagged
-                tagged_message = ""
-                
-                for participant in target_group.Participants:
-                    if participant.JID and '@' in participant.JID:
-                        phone_number = participant.JID.split('@')[0]
-                        tagged_message += f"@{phone_number} "
-                
-                # Send the tagged message
-                await self.send_message(
-                    message.chat_jid,
-                    tagged_message,
-                    message.message_id,
-                )
-            else:
-                # Fallback if no participants found
-                await self.send_message(
-                    message.chat_jid,
-                    "📢 כולם מוזמנים! 🎉",
-                    message.message_id,
-                )
+                if group.JID == message.chat_jid:
+                    # Tag everyone except the bot
+                    tagged_message = ""
+                    for participant in group.Participants:
+                        phone = participant.JID.split('@')[0]
+                        if phone != bot_phone:  # Skip bot
+                            tagged_message += f"@{phone} "
+                    
+                    await self.send_message(
+                        message.chat_jid,
+                        tagged_message.strip(),
+                        message.message_id,
+                    )
+                    return
+                    
+            # Fallback
+            await self.send_message(
+                message.chat_jid,
+                "📢 כולם מוזמנים! 🎉",
+                message.message_id,
+            )
                 
         except Exception as e:
             print(f"Error tagging participants: {e}")
