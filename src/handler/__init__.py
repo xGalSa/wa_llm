@@ -2,6 +2,7 @@ import logging
 import httpx
 import traceback
 from datetime import datetime
+from typing import Optional
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
@@ -99,17 +100,10 @@ class MessageHandler(BaseHandler):
             print(f"Traceback: {traceback.format_exc()}")
 
     async def update_global_phone_database(self, message: Message):
-        """Update the global phone number database when messages come in"""
-        try:
-            if message.sender_jid and '@' in message.sender_jid:
-                phone = message.sender_jid.split('@')[0]
-                jid = message.sender_jid
-                
-                # Store JID -> phone mapping
-                phone_mapper.add_mapping(jid, phone)
-                
-        except Exception as e:
-            logger.error(f"Error updating global phone database: {e}")
+        # Extracts phone number from sender JID when messages come in
+        phone = message.sender_jid.split('@')[0]  # e.g., "972532741041"
+        jid = message.sender_jid                  # e.g., "972532741041@s.whatsapp.net"
+        phone_mapper.add_mapping(jid, phone)     # Store the mapping
 
     async def tag_all_participants(self, message: Message):
         """Tag all participants in the group when @כולם is mentioned"""
@@ -131,12 +125,10 @@ class MessageHandler(BaseHandler):
                 # Tag everyone except the bot
                 tagged_message = ""
                 for participant in target_group.Participants:
-                    # Use phone mapper to get phone number from JID
-                    phone = phone_mapper.get_phone(participant.JID)
+                    phone = phone_mapper.get_phone(participant.JID)  # Try to get phone
                     
-                    # Only tag if we have a real phone number and it's not the bot
-                    if phone and phone != bot_phone:
-                        tagged_message += f"@{phone} "
+                    if phone and phone != bot_phone:                  # Only if we have real phone
+                        tagged_message += f"@{phone} "                # Tag with phone number
                 
                 # Send either the tagged message or fallback
                 response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
