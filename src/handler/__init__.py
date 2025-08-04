@@ -100,10 +100,49 @@ class MessageHandler(BaseHandler):
             print(f"Traceback: {traceback.format_exc()}")
 
     async def update_global_phone_database(self, message: Message):
-        # Extracts phone number from sender JID when messages come in
-        phone = message.sender_jid.split('@')[0]  # e.g., "972532741041"
-        jid = message.sender_jid                  # e.g., "972532741041@s.whatsapp.net"
-        phone_mapper.add_mapping(jid, phone)     # Store the mapping
+        """Update the global phone number database when messages come in"""
+        try:
+            if message.sender_jid and '@' in message.sender_jid:
+                phone = message.sender_jid.split('@')[0]
+                jid = message.sender_jid
+                
+                # Store JID -> phone mapping
+                phone_mapper.add_jid_mapping(jid, phone)
+                
+                # Also analyze all groups to find LID mappings for this phone
+                await self.analyze_groups_for_lid_mappings(phone, jid)
+                
+        except Exception as e:
+            logger.error(f"Error updating global phone database: {e}")
+
+    async def analyze_groups_for_lid_mappings(self, phone: str, jid: str):
+        """Analyze all groups to find LID mappings for a known phone number"""
+        try:
+            # Get all groups
+            groups_response = await self.whatsapp.get_user_groups()
+            
+            for group in groups_response.results.data:
+                for participant in group.Participants:
+                    # If this participant has the same phone in their JID, 
+                    # but appears as LID in this group, create the mapping
+                    if participant.JID.endswith('@lid'):
+                        # We can't directly match, but we can build mappings over time
+                        # This is a limitation - we need other logic to connect LIDs to phones
+                        pass
+                    elif participant.JID == jid:
+                        # This person appears with phone JID in this group
+                        # Look for other groups where they might appear as LID
+                        await self.find_lid_for_phone_across_groups(phone, jid)
+                        
+        except Exception as e:
+            logger.error(f"Error analyzing groups for LID mappings: {e}")
+
+    async def find_lid_for_phone_across_groups(self, phone: str, jid: str):
+        """Try to find LID representations of this phone across groups"""
+        # This is complex because we can't directly match LID to phone
+        # We would need additional logic or data to make this connection
+        # For now, let's focus on building mappings from known data
+        pass
 
     async def tag_all_participants(self, message: Message):
         """Tag all participants in the group when @כולם is mentioned"""
@@ -125,10 +164,12 @@ class MessageHandler(BaseHandler):
                 # Tag everyone except the bot
                 tagged_message = ""
                 for participant in target_group.Participants:
-                    phone = phone_mapper.get_phone(participant.JID)  # Try to get phone
+                    # Use phone mapper to get phone number from any identifier
+                    phone = phone_mapper.get_phone(participant.JID)
                     
-                    if phone and phone != bot_phone:                  # Only if we have real phone
-                        tagged_message += f"@{phone} "                # Tag with phone number
+                    # Only tag if we have a real phone number and it's not the bot
+                    if phone and phone != bot_phone:
+                        tagged_message += f"@{phone} "
                 
                 # Send either the tagged message or fallback
                 response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
