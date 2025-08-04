@@ -1,6 +1,7 @@
 import logging
 import httpx
 import traceback
+from datetime import datetime
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
@@ -11,6 +12,7 @@ from models import (
     WhatsAppWebhookPayload,
     Message,
 )
+from utils.phone_mapper import phone_mapper
 from whatsapp import WhatsAppClient
 from .base_handler import BaseHandler
 
@@ -18,9 +20,6 @@ logger = logging.getLogger(__name__)
 
 # Global variable to store access state
 _bot_access_enabled = False
-
-# Global dictionary to store phone numbers by group
-_group_phone_numbers = {}
 
 class MessageHandler(BaseHandler):
     def __init__(
@@ -40,10 +39,7 @@ class MessageHandler(BaseHandler):
         
         try:
             message = await self.store_message(payload)
-            # print(f"Message stored: {message is not None}")
-            # Remove message text logging for privacy
-            # Remove sender logging for privacy
-            # Remove group logging for privacy
+            print(f"Message stored: {message is not None}")
 
             if (
                 message
@@ -58,31 +54,22 @@ class MessageHandler(BaseHandler):
                 print("No message or no text - returning")
                 return
 
-            # Remove detailed message logging for privacy
-            # if message.sender_jid.endswith("@lid"):
-            #     logging.info(
-            #         f"Received message from {message.sender_jid}: {payload.model_dump_json()}"
-            #     )
-
-            # Update phone number database when messages come in
-            await self.update_phone_database(message)
+            # Update global phone number database when messages come in
+            await self.update_global_phone_database(message)
 
             # ignore messages from unmanaged groups
             # TEMPORARILY DISABLED FOR TESTING
             # if message and message.group and not message.group.managed:
             #     return
 
-            # NEW FEATURE: Check for @כולם mentions
-            if "@כולם" in message.text:
+            # NEW FEATURE: Check for @כולם mentions (only for non-forwarded messages)
+            if "@כולם" in message.text and not payload.forwarded:
                 print("Found @כולם mention - tagging all participants")
                 await self.tag_all_participants(message)
                 return  # Exit early, don't process bot mentions
 
             print("Checking if bot was mentioned...")
             my_jid = await self.whatsapp.get_my_jid()
-            # Remove JID logging for privacy
-            # Remove message text logging for privacy
-            # Remove bot mention search logging for privacy
             
             # If bot was mentioned
             if message.has_mentioned(my_jid):
@@ -111,93 +98,73 @@ class MessageHandler(BaseHandler):
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
 
-    async def forward_message(
-        self, payload: WhatsAppWebhookPayload, forward_url: str
-    ) -> None:
-        """
-        Forward a message to the group's configured forward URL using HTTP POST.
-
-        :param payload: The WhatsApp webhook payload to forward
-        :param forward_url: The URL to forward the message to
-        """
-        # Ensure we have a forward URL
-        if not forward_url:
-            return
-
-        try:
-            # Create an async HTTP client and forward the message
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    forward_url,
-                    json=payload.model_dump(mode="json"),  # Convert Pydantic model to dict for JSON serialization
-                    headers={"Content-Type": "application/json"},
-                )
-                response.raise_for_status()
-
-        except httpx.HTTPError as exc:
-            # Log the error but don't raise it to avoid breaking message processing
-            logger.error(f"Failed to forward message to {forward_url}: {exc}")
-        except Exception as exc:
-            # Catch any other unexpected errors
-            logger.error(f"Unexpected error forwarding message to {forward_url}: {exc}")
-
-    async def update_phone_database(self, message: Message):
-        """
-        Update the phone number database when messages come in
-        """
+    async def update_global_phone_database(self, message: Message):
+        """Update the global phone number database when messages come in"""
         try:
             if message.sender_jid and '@' in message.sender_jid:
-                # Extract phone number from sender JID
                 phone = message.sender_jid.split('@')[0]
-                group_id = message.chat_jid
+                jid = message.sender_jid
                 
-                # Initialize group dict if it doesn't exist
-                if group_id not in _group_phone_numbers:
-                    _group_phone_numbers[group_id] = set()
-                
-                # Add phone number to the group's set
-                _group_phone_numbers[group_id].add(phone)
-                # Remove logging for privacy
-                # logger.info(f"Updated phone database for group {group_id}: {phone}")
+                # Store JID -> phone mapping
+                phone_mapper.add_mapping(jid, phone)
                 
         except Exception as e:
-            logger.error(f"Error updating phone database: {e}")
+            logger.error(f"Error updating global phone database: {e}")
 
     async def tag_all_participants(self, message: Message):
-        """
-        Tag all participants in the group when @כולם is mentioned
-        """
+        """Tag all participants in the group when @כולם is mentioned"""
         try:
             # Get bot's phone number to exclude it
             my_jid = await self.whatsapp.get_my_jid()
             bot_phone = my_jid.user
             
-            group_id = message.chat_jid
+            # Get all groups and find this one
+            groups_response = await self.whatsapp.get_user_groups()
             
-            # Get phone numbers from our database
-            if group_id in _group_phone_numbers:
-                phone_numbers = _group_phone_numbers[group_id]
-                # Remove logging for privacy
-                # logger.info(f"Found {len(phone_numbers)} phone numbers in database for group {group_id}")
-                
+            # Find the target group first
+            target_group = next(
+                (group for group in groups_response.results.data if group.JID == message.chat_jid),
+                None
+            )
+            
+            if target_group:
                 # Tag everyone except the bot
                 tagged_message = ""
-                for phone in phone_numbers:
-                    if phone != bot_phone:
+                for participant in target_group.Participants:
+                    # Use phone mapper to get phone number from JID
+                    phone = phone_mapper.get_phone(participant.JID)
+                    
+                    if phone and phone != bot_phone:
                         tagged_message += f"@{phone} "
-                        # Remove logging for privacy
-                        # logger.info(f"Added phone from database: {phone}")
                 
-                if tagged_message.strip():
-                    await self.send_message(message.chat_jid, tagged_message.strip(), message.message_id)
-                    return
-            else:
-                # Remove logging for privacy
-                # logger.info(f"No phone numbers found in database for group {group_id}")
-                pass
+                # Send either the tagged message or fallback
+                response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
+                await self.send_message(message.chat_jid, response_text, message.message_id)
+                return
                     
         except Exception as e:
             logger.error(f"Error tagging participants: {e}")
         
-        # Fallback if no phone numbers in database
+        # Fallback
         await self.send_message(message.chat_jid, "📢 כולם מוזמנים!", message.message_id)
+
+    async def forward_message(
+        self, payload: WhatsAppWebhookPayload, forward_url: str
+    ) -> None:
+        """Forward a message to the group's configured forward URL using HTTP POST."""
+        if not forward_url:
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    forward_url,
+                    json=payload.model_dump(mode="json"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+
+        except httpx.HTTPError as exc:
+            logger.error(f"Failed to forward message to {forward_url}: {exc}")
+        except Exception as exc:
+            logger.error(f"Unexpected error forwarding message to {forward_url}: {exc}")
