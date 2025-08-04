@@ -16,16 +16,17 @@ class PhoneMapper:
         self._jid_to_phone[jid] = phone
         self._phone_last_seen[phone] = datetime.now(timezone.utc)
     
-    def get_phone(self, jid: str) -> str:
-        """Get phone number by JID, fallback to extracting from JID"""
+    def get_phone(self, jid: str) -> Optional[str]:
+        """Get phone number by JID, return None if it's LID format"""
         if jid in self._jid_to_phone:
             return self._jid_to_phone[jid]
         
-        # Fallback: extract phone from JID format
-        if '@' in jid:
+        # Only extract phone from actual phone JIDs, not LIDs
+        if '@' in jid and not jid.endswith('@lid'):
             return jid.split('@')[0]
         
-        return jid
+        # Return None for LID format - we don't have the phone number
+        return None
     
     def get_all_phones(self) -> list[str]:
         """Get all known phone numbers"""

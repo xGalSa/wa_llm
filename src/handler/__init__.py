@@ -134,6 +134,7 @@ class MessageHandler(BaseHandler):
                     # Use phone mapper to get phone number from JID
                     phone = phone_mapper.get_phone(participant.JID)
                     
+                    # Only tag if we have a real phone number and it's not the bot
                     if phone and phone != bot_phone:
                         tagged_message += f"@{phone} "
                 
