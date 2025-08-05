@@ -25,14 +25,15 @@ _bot_access_enabled = False
 
 
 async def get_user_groups_with_retry(whatsapp: WhatsAppClient, max_retries: int = 3):
-    """Get user groups with simple retry logic for rate limiting"""
+    """Get user groups with simple retry logic for rate limiting and server errors"""
     for attempt in range(max_retries):
         try:
             return await whatsapp.get_user_groups()
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429:
+            # Retry on both 429 (rate limit) and 500 (server error)
+            if exc.response.status_code in [429, 500]:
                 wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
-                logger.warning(f"Rate limit hit (attempt {attempt + 1}/{max_retries}). Waiting {wait_time}s...")
+                logger.warning(f"HTTP {exc.response.status_code} error (attempt {attempt + 1}/{max_retries}). Waiting {wait_time}s...")
                 await asyncio.sleep(wait_time)
                 continue
             else:
@@ -43,7 +44,7 @@ async def get_user_groups_with_retry(whatsapp: WhatsAppClient, max_retries: int 
     
     # If we get here, all retries failed
     logger.error("All retries failed for get_user_groups")
-    raise httpx.HTTPStatusError("Rate limit exceeded after all retries", request=None, response=None)
+    raise httpx.HTTPStatusError("Request failed after all retries", request=None, response=None)
 
 
 class MessageHandler(BaseHandler):
