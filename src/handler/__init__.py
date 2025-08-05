@@ -47,6 +47,23 @@ async def get_user_groups_with_retry(whatsapp: WhatsAppClient, max_retries: int 
     raise httpx.HTTPStatusError("Request failed after all retries", request=None, response=None)
 
 
+def extract_phone_from_participant(participant):
+    """Extract phone number from participant data"""
+    try:
+        # Try to get PhoneNumber directly from the model
+        if participant.PhoneNumber:
+            phone = participant.PhoneNumber
+            # Extract phone number from format "972585277785@s.whatsapp.net"
+            return phone.split('@')[0] if '@' in phone else phone
+        
+        # Fallback to phone mapper using JID
+        return phone_mapper.get_phone(participant.JID)
+        
+    except Exception as e:
+        logger.warning(f"Error extracting phone from participant: {e}")
+        return None
+
+
 class MessageHandler(BaseHandler):
     def __init__(
         self,
@@ -106,7 +123,7 @@ class MessageHandler(BaseHandler):
                 # Admin command - check if message contains "allow"
                 if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
                     _bot_access_enabled = not _bot_access_enabled
-                    await self.send_message(message.chat_jid, f"🔐 *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
+                    await self.send_message(message.chat_jid, f" *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
                     return
                 
                 # Simple access check - either access is enabled OR user is admin
@@ -200,8 +217,8 @@ class MessageHandler(BaseHandler):
                 for participant in target_group.Participants:
                     logger.info(f"Processing participant: {participant.JID}")
                     
-                    # Use phone mapper to get phone number from any identifier
-                    phone = phone_mapper.get_phone(participant.JID)
+                    # Extract phone number using our helper function
+                    phone = extract_phone_from_participant(participant)
                     logger.info(f"Got phone: {phone} for JID: {participant.JID}")
                     
                     # Only tag if we have a real phone number and it's not the bot
@@ -225,7 +242,7 @@ class MessageHandler(BaseHandler):
                 logger.info(f"Final tagged message: '{tagged_message}'")
                 
                 # Send either the tagged message or fallback
-                response_text = tagged_message.strip() or "📢 כולם מוזמנים! 🎉"
+                response_text = tagged_message.strip() or " כולם מוזמנים! 🎉"
                 logger.info(f"Sending response: '{response_text}'")
                 await self.send_message(message.chat_jid, response_text, message.message_id)
                 return

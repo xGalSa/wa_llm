@@ -4,6 +4,7 @@ from typing import Optional, List, Generic, TypeVar, Dict, Any
 from pydantic import BaseModel, Field
 
 T = TypeVar("T")
+D = TypeVar("D")  # Added this missing TypeVar
 
 
 class BaseResponse(BaseModel, Generic[T]):
@@ -20,6 +21,7 @@ class ErrorResponse(BaseModel):
 
 class Participant(BaseModel):
     JID: str
+    PhoneNumber: Optional[str] = None  # Added this field to match the API response
     LID: Optional[str] = None
     IsAdmin: bool
     IsSuperAdmin: bool
@@ -127,6 +129,7 @@ class UserAvatar(BaseModel):
     url: str
     id: str
     type: str
+    direct_path: str
 
 
 class UserPrivacy(BaseModel):
@@ -222,9 +225,6 @@ class UnfollowNewsletterRequest(BaseModel):
 class DeviceResult(BaseModel):
     name: str
     device: str
-
-
-D = TypeVar("D")
 
 
 class DataResult(BaseModel, Generic[D]):
