@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import httpx
 import traceback
@@ -19,8 +20,31 @@ from .base_handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
-# Global variable to store access state
+# Global bot access control
 _bot_access_enabled = False
+
+
+async def get_user_groups_with_retry(whatsapp: WhatsAppClient, max_retries: int = 3):
+    """Get user groups with simple retry logic for rate limiting"""
+    for attempt in range(max_retries):
+        try:
+            return await whatsapp.get_user_groups()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429:
+                wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
+                logger.warning(f"Rate limit hit (attempt {attempt + 1}/{max_retries}). Waiting {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            else:
+                raise
+        except Exception as e:
+            logger.error(f"Unexpected error fetching groups: {e}")
+            raise
+    
+    # If we get here, all retries failed
+    logger.error("All retries failed for get_user_groups")
+    raise httpx.HTTPStatusError("Rate limit exceeded after all retries", request=None, response=None)
+
 
 class MessageHandler(BaseHandler):
     def __init__(
@@ -118,8 +142,8 @@ class MessageHandler(BaseHandler):
     async def analyze_groups_for_lid_mappings(self, phone: str, jid: str):
         """Analyze all groups to find LID mappings for a known phone number"""
         try:
-            # Get all groups
-            groups_response = await self.whatsapp.get_user_groups()
+            # Get all groups with retry logic
+            groups_response = await get_user_groups_with_retry(self.whatsapp)
             
             for group in groups_response.results.data:
                 for participant in group.Participants:
@@ -132,7 +156,7 @@ class MessageHandler(BaseHandler):
                     elif participant.JID == jid:
                         # This person appears with phone JID in this group
                         # Look for other groups where they might appear as LID
-                        await self.find_lid_for_phone_across_groups(phone, jid)
+                        pass
                         
         except Exception as e:
             logger.error(f"Error analyzing groups for LID mappings: {e}")
@@ -152,8 +176,8 @@ class MessageHandler(BaseHandler):
             bot_phone = my_jid.user
             logger.info(f"Bot phone: {bot_phone}")
             
-            # Get all groups and find this one
-            groups_response = await self.whatsapp.get_user_groups()
+            # Get all groups with retry logic for rate limiting
+            groups_response = await get_user_groups_with_retry(self.whatsapp)
             
             # Add null check for results
             if not groups_response.results or not groups_response.results.data:
