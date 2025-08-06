@@ -45,13 +45,27 @@ class Router(BaseHandler):
         super().__init__(session, whatsapp, embedding_client)
 
     async def _route(self, message: str) -> IntentEnum:
-        """Simplified routing logic"""
-        if "סיכום יומי" in message:
+        """Route message to appropriate handler based on content"""
+        message_lower = message.lower()
+        
+        # Check for summarize intent
+        if any(phrase in message_lower for phrase in ["סיכום יומי", "daily summary", "summarize", "סיכום"]):
             return IntentEnum.summarize
+            
+        # Check for about intent
+        if any(phrase in message_lower for phrase in ["about", "אודות", "מי אתה", "what are you", "help", "עזרה"]):
+            return IntentEnum.about
+            
+        # Default to ask_question for everything else
         return IntentEnum.ask_question
 
     async def __call__(self, message: Message):
         """Route message to appropriate handler"""
+        # Ensure message.text is not None before routing
+        if message.text is None:
+            logger.warning("Received message with no text, skipping routing")
+            return
+            
         route = await self._route(message.text)
         match route:
             case IntentEnum.summarize:
@@ -142,7 +156,7 @@ class Router(BaseHandler):
 
         await self.send_message(
             message.chat_jid,
-            response.data,
+            response.output,
             message.message_id,
         )
 
