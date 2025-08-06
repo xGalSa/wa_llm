@@ -138,11 +138,12 @@ async def load_topics(
     topics_embeddings = await voyage_embed_text(embedding_client, documents)
 
     doc_models = [
-        # Use deterministic hash based on group, time, and summary content
+        # TODO: Replace topic.subject with something else that is deterministic.
+        # topic.subject is not deterministic because it's the result of the LLM.
         KBTopicCreate(
             id=str(
                 hashlib.sha256(
-                    f"{group.group_jid}_{start_time}_{topic.summary[:100]}".encode()
+                    f"{group.group_jid}_{start_time}_{topic.subject}".encode()
                 ).hexdigest()
             ),
             embedding=emb,
@@ -154,7 +155,7 @@ async def load_topics(
         )
         for topic, emb in zip(topics, topics_embeddings)
     ]
-    # Using bulk_upsert for efficient database operations
+    # Once we give a meaningfull ID, we should migrate to upsert!
     await bulk_upsert(db_session, [KBTopic(**doc.model_dump()) for doc in doc_models])
 
     # Update the group with the new last_ingest

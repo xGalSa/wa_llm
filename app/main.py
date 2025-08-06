@@ -83,6 +83,6 @@ app.include_router(load_new_kbtopics_api.router)
 if __name__ == "__main__":
     import uvicorn
 
-    logging.info(f"Running on {settings.host}:{settings.port}")
+    print(f"Running on {settings.host}:{settings.port}")
 
     uvicorn.run("main:app", host=settings.host, port=settings.port, reload=True)

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date
+from datetime import datetime, timedelta, date
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -144,7 +144,8 @@ class Router(BaseHandler):
 
         # If pydantic_ai provides usage info
         if hasattr(response, 'usage'):
-            logger.debug(f"Tokens used: {response.usage}")
+            logger.info(f"Tokens used: {response.usage}")
+            print(f"Tokens used: {response.usage}")
 
         await self.send_message(
             message.chat_jid,

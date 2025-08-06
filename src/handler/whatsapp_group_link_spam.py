@@ -38,13 +38,12 @@ class WhatsappGroupLinkSpamHandler(BaseHandler):
 
         spam_result = response.output
 
-        if not (message and message.group and message.group.owner_jid):
-            raise ValueError("Message, group, and group owner JID are required")
+        if message and message.group and not message.group.owner_jid:
+            raise ValueError("Group owner JID is required")
 
         # Construct message with validated data
-        owner_phone = message.group.owner_jid.split('@')[0]
         message_to_send = (
-            f"@{owner_phone} - A Whatsapp group link was shared in the group. "
+            f"@{message.group.owner_jid.split('@')[0]} - A Whatsapp group link was shared in the group. "  # type: ignore
             f"This might be a spam. Please check and remove if it is spam.\n\n"
             f"Spam Confidence Level: *{spam_result.score}*  (1 not spam - 5 spam) \n"
             f"Explanation: {spam_result.explanation}"

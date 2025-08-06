@@ -22,13 +22,20 @@ async def webhook(
         Simple "ok" response to acknowledge receipt
     """
     try:
+        # Remove privacy-sensitive logging
+        # print(f"=== WEBHOOK RECEIVED ===")
+        # print(f"From: {payload.from_}")
+        # print(f"Message text: {payload.message.text if payload.message else 'No message'}")
+        
         # Only process messages that have a sender (from_ field)
         if payload.from_:
+            # print("Calling handler...")
             await handler(payload)
+            # print("=== HANDLER COMPLETED ===")
         return "ok"
     except Exception as e:
-        logging.error(f"Webhook error: {e}")
+        print(f"Webhook error: {e}")
         import traceback
-        logging.error(f"Traceback: {traceback.format_exc()}")
+        print(f"Traceback: {traceback.format_exc()}")
         # Still return "ok" to avoid WhatsApp retrying
         return "ok"

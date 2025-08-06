@@ -78,11 +78,11 @@ class MessageHandler(BaseHandler):
         super().__init__(session, whatsapp, embedding_client)
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
-        logger.debug("=== MESSAGE HANDLER START ===")
+        print("=== MESSAGE HANDLER START ===")
         
         try:
             message = await self.store_message(payload)
-            logger.debug(f"Message stored: {message is not None}")
+            print(f"Message stored: {message is not None}")
 
             if (
                 message
@@ -94,28 +94,29 @@ class MessageHandler(BaseHandler):
 
             # ignore messages that don't exist or don't have text
             if not message or not message.text:
-                logger.debug("No message or no text - returning")
+                print("No message or no text - returning")
                 return
 
             # Update global phone number database when messages come in
             await self.update_global_phone_database(message)
 
             # ignore messages from unmanaged groups
-            if message and message.group and not message.group.managed:
-                return
+            # TEMPORARILY DISABLED FOR TESTING
+            # if message and message.group and not message.group.managed:
+            #     return
 
             # NEW FEATURE: Check for @כולם mentions (only for non-forwarded messages)
             if "@כולם" in message.text and not payload.forwarded:
-                logger.info("Found @כולם mention - tagging all participants")
+                print("Found @כולם mention - tagging all participants")
                 await self.tag_all_participants(message)
                 return  # Exit early, don't process bot mentions
 
-            logger.debug("Checking if bot was mentioned...")
+            print("Checking if bot was mentioned...")
             my_jid = await self.whatsapp.get_my_jid()
             
             # If bot was mentioned
             if message.has_mentioned(my_jid):
-                logger.info("Bot was mentioned!")
+                print("Bot was mentioned!")
                 
                 global _bot_access_enabled
 
@@ -131,14 +132,14 @@ class MessageHandler(BaseHandler):
                 else:
                     await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
             else:
-                logger.debug("Bot was not mentioned")
+                print("Bot was not mentioned")
 
-            logger.debug("=== MESSAGE HANDLER END ===")
+            print("=== MESSAGE HANDLER END ===")
 
         except Exception as e:
-            logger.error(f"Error in message handler: {e}")
+            print(f"Error in message handler: {e}")
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            print(f"Traceback: {traceback.format_exc()}")
 
     async def update_global_phone_database(self, message: Message):
         """Update the global phone number database when messages come in"""
