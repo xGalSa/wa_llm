@@ -84,6 +84,7 @@ class MessageHandler(BaseHandler):
             message = await self.store_message(payload)
             print(f"Message stored: {message is not None}")
 
+            # Handle message forwarding
             if (
                 message
                 and message.group
@@ -92,51 +93,27 @@ class MessageHandler(BaseHandler):
             ):
                 await self.forward_message(payload, message.group.forward_url)
 
-            # ignore messages that don't exist or don't have text
+            # Early return if no message or no text
             if not message or not message.text:
                 print("No message or no text - returning")
                 return
 
-            # Update global phone number database when messages come in
+            # Update phone database
             await self.update_global_phone_database(message)
 
-            # ignore messages from unmanaged groups
-            # TEMPORARILY DISABLED FOR TESTING
-            # if message and message.group and not message.group.managed:
-            #     return
-
-            # NEW FEATURE: Check for @כולם mentions (only for non-forwarded messages)
+            # Handle @כולם mentions
             if "@כולם" in message.text and not payload.forwarded:
                 print("Found @כולם mention - tagging all participants")
                 await self.tag_all_participants(message)
-                return  # Exit early, don't process bot mentions
+                return
 
+            # Check if bot was mentioned
             print("Checking if bot was mentioned...")
             my_jid = await self.whatsapp.get_my_jid()
             
-            # If bot was mentioned
             if message.has_mentioned(my_jid):
                 print("Bot was mentioned!")
-                
-                global _bot_access_enabled
-
-                # Admin command - check if message contains "allow"
-                if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
-                    _bot_access_enabled = not _bot_access_enabled
-                    await self.send_message(message.chat_jid, f" *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
-                    return
-                
-                # Simple access check - either access is enabled OR user is admin
-                if _bot_access_enabled or message.sender_jid.startswith("972532741041"):
-                    # NEW LOGIC: Check for specific daily summary command
-                    if "סיכום יומי" in message.text:
-                        print("Daily summary command detected - calling summarize")
-                        await self.router.summarize(message)
-                    else:
-                        print("Regular message - sending to knowledge base")
-                        await self.router.ask_knowledge_base(message)
-                else:
-                    await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
+                await self._handle_bot_command(message)
             else:
                 print("Bot was not mentioned")
 
@@ -146,6 +123,27 @@ class MessageHandler(BaseHandler):
             print(f"Error in message handler: {e}")
             import traceback
             print(f"Traceback: {traceback.format_exc()}")
+
+    async def _handle_bot_command(self, message: Message):
+        """Handle bot commands with simplified logic"""
+        global _bot_access_enabled
+
+        # Admin command
+        if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
+            _bot_access_enabled = not _bot_access_enabled
+            status = "מופעל" if _bot_access_enabled else "מושבתת"
+            await self.send_message(message.chat_jid, f"*מצב גישה:* {status}", message.message_id)
+            return
+
+        # Check access permissions
+        is_admin = message.sender_jid.startswith("972532741041")
+        if not (_bot_access_enabled or is_admin):
+            await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
+            return
+
+        # Route to appropriate handler using Router's __call__ method
+        print("Routing message to appropriate handler")
+        await self.router(message)  # This calls Router.__call__(message)
 
     async def update_global_phone_database(self, message: Message):
         """Update the global phone number database when messages come in"""

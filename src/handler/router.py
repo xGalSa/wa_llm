@@ -28,11 +28,7 @@ class IntentEnum(str, Enum):
 
 class Intent(BaseModel):
     intent: IntentEnum = Field(
-        description="""The intent of the message.
-- summarize: Summarize TODAY's chat messages, or catch up on the chat messages FROM TODAY ONLY. This will trigger the summarization of the chat messages. This is only relevant for queries about TODDAY chat. A query across a broader timespan is classified as ask_question
-- ask_question: Ask a question or learn from the collective knowledge of the group. This will trigger the knowledge base to answer the question.
-- about: Learn about me(bot) and my capabilities. This will trigger the about section.
-- other:  something else. This will trigger the default response."""
+        description="The intent of the user's message"
     )
 
 
@@ -48,83 +44,24 @@ class Router(BaseHandler):
         )
         super().__init__(session, whatsapp, embedding_client)
 
-    async def __call__(self, payload: WhatsAppWebhookPayload):
-        print("=== MESSAGE HANDLER START ===")
-        
-        try:
-            message = await self.store_message(payload)
-            print(f"Message stored: {message is not None}")
-
-            if (
-                message
-                and message.group
-                and message.group.managed
-                and message.group.forward_url
-            ):
-                await self.forward_message(payload, message.group.forward_url)
-
-            # ignore messages that don't exist or don't have text
-            if not message or not message.text:
-                print("No message or no text - returning")
-                return
-
-            # Update global phone number database when messages come in
-            await self.update_global_phone_database(message)
-
-            # ignore messages from unmanaged groups
-            # TEMPORARILY DISABLED FOR TESTING
-            # if message and message.group and not message.group.managed:
-            #     return
-
-            # NEW FEATURE: Check for @כולם mentions (only for non-forwarded messages)
-            if "@כולם" in message.text and not payload.forwarded:
-                print("Found @כולם mention - tagging all participants")
-                await self.tag_all_participants(message)
-                return  # Exit early, don't process bot mentions
-
-            print("Checking if bot was mentioned...")
-            my_jid = await self.whatsapp.get_my_jid()
-            
-            # If bot was mentioned
-            if message.has_mentioned(my_jid):
-                print("Bot was mentioned!")
-                
-                global _bot_access_enabled
-
-                # Admin command - check if message contains "allow"
-                if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
-                    _bot_access_enabled = not _bot_access_enabled
-                    await self.send_message(message.chat_jid, f" *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
-                    return
-                
-                # Simple access check - either access is enabled OR user is admin
-                if _bot_access_enabled or message.sender_jid.startswith("972532741041"):
-                    # NEW LOGIC: Check for specific daily summary command
-                    if "סיכום יומי" in message.text:
-                        print("Daily summary command detected - calling summarize")
-                        await self.router.summarize(message)
-                    else:
-                        print("Regular message - sending to knowledge base")
-                        await self.router.ask_knowledge_base(message)
-                else:
-                    await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
-            else:
-                print("Bot was not mentioned")
-
-            print("=== MESSAGE HANDLER END ===")
-
-        except Exception as e:
-            print(f"Error in message handler: {e}")
-            import traceback
-            print(f"Traceback: {traceback.format_exc()}")
-
     async def _route(self, message: str) -> IntentEnum:
-        # Check for specific daily summary command first
+        """Simplified routing logic"""
         if "סיכום יומי" in message:
             return IntentEnum.summarize
-        
-        # Everything else goes to knowledge base
         return IntentEnum.ask_question
+
+    async def __call__(self, message: Message):
+        """Route message to appropriate handler"""
+        route = await self._route(message.text)
+        match route:
+            case IntentEnum.summarize:
+                await self.summarize(message)
+            case IntentEnum.ask_question:
+                await self.ask_knowledge_base(message)
+            case IntentEnum.about:
+                await self.about(message)
+            case IntentEnum.other:
+                await self.default_response(message)
 
     async def summarize(self, message: Message):
         today_start = datetime.combine(date.today(), datetime.min.time())
