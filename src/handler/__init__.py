@@ -78,91 +78,74 @@ class MessageHandler(BaseHandler):
         super().__init__(session, whatsapp, embedding_client)
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
-        logger.info("=== MESSAGE HANDLER START ===")
-        logger.info(f"Received payload: from={payload.from_}, text_length={len(payload.text) if payload.text else 0}")
+        print("=== MESSAGE HANDLER START ===")
         
         try:
-            # Store the message
-            logger.debug("Storing message in database...")
             message = await self.store_message(payload)
-            logger.info(f"Message stored successfully: {message is not None}")
-            
-            if message:
-                logger.info(f"Message details: chat_jid={message.chat_jid}, sender_jid={message.sender_jid}, text_preview={message.text[:50] if message.text else 'None'}...")
+            print(f"Message stored: {message is not None}")
 
-            # Handle forwarding for managed groups
             if (
                 message
                 and message.group
                 and message.group.managed
                 and message.group.forward_url
             ):
-                logger.info(f"Forwarding message to: {message.group.forward_url}")
                 await self.forward_message(payload, message.group.forward_url)
 
-            # Check if message has text content
+            # ignore messages that don't exist or don't have text
             if not message or not message.text:
-                logger.info("No message or no text content - returning early")
+                print("No message or no text - returning")
                 return
 
-            # Update global phone number database
-            logger.debug("Updating global phone number database...")
+            # Update global phone number database when messages come in
             await self.update_global_phone_database(message)
 
-            # Check group management status
-            if message.group:
-                logger.info(f"Group managed status: {message.group.managed}")
-                if not message.group.managed:
-                    logger.info("Message from unmanaged group - returning early")
-                    return
+            # ignore messages from unmanaged groups
+            # TEMPORARILY DISABLED FOR TESTING
+            # if message and message.group and not message.group.managed:
+            #     return
 
-            # Check for @כולם mentions
+            # NEW FEATURE: Check for @כולם mentions (only for non-forwarded messages)
             if "@כולם" in message.text and not payload.forwarded:
-                logger.info("Found @כולם mention - tagging all participants")
+                print("Found @כולם mention - tagging all participants")
                 await self.tag_all_participants(message)
-                return
+                return  # Exit early, don't process bot mentions
 
-            # Check if bot was mentioned
-            logger.debug("Checking if bot was mentioned...")
-            try:
-                my_jid = await self.whatsapp.get_my_jid()
-                logger.info(f"My JID: {my_jid}")
+            print("Checking if bot was mentioned...")
+            my_jid = await self.whatsapp.get_my_jid()
+            
+            # If bot was mentioned
+            if message.has_mentioned(my_jid):
+                print("Bot was mentioned!")
                 
-                if message.has_mentioned(my_jid):
-                    logger.info("Bot was mentioned! Processing bot command...")
-                    
-                    global _bot_access_enabled
-                    logger.info(f"Current bot access status: {_bot_access_enabled}")
+                global _bot_access_enabled
 
-                    # Handle admin commands
-                    if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
-                        _bot_access_enabled = not _bot_access_enabled
-                        logger.info(f"Admin toggled bot access to: {_bot_access_enabled}")
-                        await self.send_message(message.chat_jid, f" *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
-                        return
-                    
-                    # Check access permissions
-                    is_admin = message.sender_jid.startswith("972532741041")
-                    logger.info(f"User is admin: {is_admin}")
-                    
-                    if _bot_access_enabled or is_admin:
-                        logger.info("Access granted - routing message to agent...")
-                        await self.router(message)
+                # Admin command - check if message contains "allow"
+                if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
+                    _bot_access_enabled = not _bot_access_enabled
+                    await self.send_message(message.chat_jid, f" *מצב גישה:* {'מופעל' if _bot_access_enabled else 'מושבתת'}", message.message_id)
+                    return
+                
+                # Simple access check - either access is enabled OR user is admin
+                if _bot_access_enabled or message.sender_jid.startswith("972532741041"):
+                    # NEW LOGIC: Check for specific daily summary command
+                    if "סיכום יומי" in message.text:
+                        print("Daily summary command detected - calling summarize")
+                        await self.router.summarize(message)
                     else:
-                        logger.info("Access denied - sending access denied message")
-                        await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
+                        print("Regular message - sending to knowledge base")
+                        await self.router.ask_knowledge_base(message)
                 else:
-                    logger.debug("Bot was not mentioned - no action needed")
-                    
-            except Exception as e:
-                logger.error(f"Error checking bot mention: {e}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
+                    await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
+            else:
+                print("Bot was not mentioned")
 
-            logger.info("=== MESSAGE HANDLER END ===")
+            print("=== MESSAGE HANDLER END ===")
 
         except Exception as e:
-            logger.error(f"Error in message handler: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            print(f"Error in message handler: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
 
     async def update_global_phone_database(self, message: Message):
         """Update the global phone number database when messages come in"""
