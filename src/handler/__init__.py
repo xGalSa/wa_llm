@@ -2,7 +2,7 @@ import asyncio
 import logging
 import httpx
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -75,6 +75,7 @@ class MessageHandler(BaseHandler):
         self.whatsapp_group_link_spam = WhatsappGroupLinkSpamHandler(
             session, whatsapp, embedding_client
         )
+        self.processed_messages = set()  # Track processed message IDs
         super().__init__(session, whatsapp, embedding_client)
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
@@ -83,6 +84,18 @@ class MessageHandler(BaseHandler):
         try:
             message = await self.store_message(payload)
             logger.debug(f"Message stored: {message is not None}")
+
+            # Check for duplicate message processing
+            if message and message.message_id in self.processed_messages:
+                logger.info(f"Message {message.message_id} already processed, skipping")
+                return
+            
+            # Add message to processed set
+            if message:
+                self.processed_messages.add(message.message_id)
+                # Keep only last 1000 processed messages to prevent memory issues
+                if len(self.processed_messages) > 1000:
+                    self.processed_messages = set(list(self.processed_messages)[-1000:])
 
             # Handle message forwarding
             if (
@@ -98,6 +111,42 @@ class MessageHandler(BaseHandler):
                 logger.debug("No message or no text - returning")
                 return
 
+            # Get bot's JID early for all checks
+            my_jid = await self.whatsapp.get_my_jid()
+            
+            # Prevent bot from responding to its own messages - CHECK THIS FIRST!
+            bot_jid_normalized = my_jid.normalize_str()
+            bot_jid_user = my_jid.user
+            logger.info(f"Checking self-message: message.sender_jid='{message.sender_jid}', bot_jid='{bot_jid_normalized}', bot_user='{bot_jid_user}'")
+            
+            # Check multiple ways the bot might identify its own messages
+            is_own_message = (
+                message.sender_jid == bot_jid_normalized or 
+                message.sender_jid == my_jid or 
+                message.sender_jid.endswith(f"@{bot_jid_user}") or
+                message.sender_jid.startswith(bot_jid_user) or
+                message.sender_jid == f"{bot_jid_user}@s.whatsapp.net" or
+                message.sender_jid == f"{bot_jid_user}@c.us"
+            )
+            
+            if is_own_message:
+                logger.info("Bot received its own message, ignoring")
+                return
+
+            # Check if message is too old (more than 5 minutes)
+            message_age = datetime.now(timezone.utc) - message.timestamp
+            if message_age.total_seconds() > 300:  # 5 minutes
+                logger.info(f"Message too old ({message_age.total_seconds():.1f}s), skipping")
+                return
+
+            # Check if this is a reply to a bot message (prevent bot from responding to replies to its own messages)
+            if message.reply_to_id:
+                # Check if the replied message is from the bot
+                replied_message = await self.session.get(Message, message.reply_to_id)
+                if replied_message and replied_message.sender_jid == bot_jid_normalized:
+                    logger.info("Message is reply to bot's own message, skipping")
+                    return
+
             # Update phone database
             await self.update_global_phone_database(message)
 
@@ -109,9 +158,10 @@ class MessageHandler(BaseHandler):
 
             # Check if bot was mentioned
             logger.debug("Checking if bot was mentioned...")
-            my_jid = await self.whatsapp.get_my_jid()
             
-            if message.has_mentioned(my_jid):
+            mention_check = message.has_mentioned(my_jid)
+            logger.info(f"Mention check: {mention_check}, message text: '{message.text}'")
+            if mention_check:
                 logger.info("Bot was mentioned!")
                 await self._handle_bot_command(message)
             else:
@@ -141,7 +191,7 @@ class MessageHandler(BaseHandler):
             return
 
         # Route to appropriate handler using Router's __call__ method
-        print("Routing message to appropriate handler")
+        logger.debug("Routing message to appropriate handler")
         await self.router(message)  # This calls Router.__call__(message)
 
     async def update_global_phone_database(self, message: Message):

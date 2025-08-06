@@ -47,37 +47,50 @@ class Router(BaseHandler):
     async def _route(self, message: str) -> IntentEnum:
         """Route message to appropriate handler based on content"""
         message_lower = message.lower()
+        logger.info(f"Routing message: '{message}' (lower: '{message_lower}')")
         
         # Check for summarize intent
         if any(phrase in message_lower for phrase in ["סיכום יומי", "daily summary", "summarize", "סיכום"]):
+            logger.info("Routing to summarize")
             return IntentEnum.summarize
             
         # Check for about intent
         if any(phrase in message_lower for phrase in ["about", "אודות", "מי אתה", "what are you", "help", "עזרה"]):
+            logger.info("Routing to about")
             return IntentEnum.about
             
         # Default to ask_question for everything else
+        logger.info("Routing to ask_question (default)")
         return IntentEnum.ask_question
 
     async def __call__(self, message: Message):
         """Route message to appropriate handler"""
+        logger.info(f"Router.__call__ called with message from {message.sender_jid}")
+        
         # Ensure message.text is not None before routing
         if message.text is None:
             logger.warning("Received message with no text, skipping routing")
             return
             
         route = await self._route(message.text)
+        logger.info(f"Route determined: {route}")
+        
         match route:
             case IntentEnum.summarize:
+                logger.info("Calling summarize handler")
                 await self.summarize(message)
             case IntentEnum.ask_question:
+                logger.info("Calling ask_knowledge_base handler")
                 await self.ask_knowledge_base(message)
             case IntentEnum.about:
+                logger.info("Calling about handler")
                 await self.about(message)
             case IntentEnum.other:
+                logger.info("Calling default_response handler")
                 await self.default_response(message)
 
     async def summarize(self, message: Message):
+        logger.info("=== SUMMARIZE METHOD START ===")
         today_start = datetime.combine(date.today(), datetime.min.time())
         my_jid = await self.whatsapp.get_my_jid()
         stmt = (
@@ -89,7 +102,7 @@ class Router(BaseHandler):
             .limit(200)  # Capture more messages for better filtering
         )
         res = await self.session.exec(stmt)
-        messages: list[Message] = res.all()
+        messages: list[Message] = list(res.all())
 
         if len(messages) > 50:
             await self.send_message(
@@ -100,49 +113,30 @@ class Router(BaseHandler):
 
         agent = Agent(
             model="anthropic:claude-4-sonnet-20250514",
-            system_prompt=f"""Create a comprehensive, detailed summary of TODAY's important and relevant discussions from the group chat.
+            system_prompt=f"""Create a comprehensive summary of TODAY's important discussions from the group chat.
 
-            CURRENT TIME CONTEXT: It is now {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (local time).
-            Messages from earlier today may be outdated if they've been superseded by newer information.
+            CURRENT TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-            CONTEXT: You are summarizing a military/educational group chat into a WhatsApp message. Focus on operational, educational, and organizational content.
-
-            PRIORITY CONTENT - Include these with full details:
-            - Important decisions, announcements, or action items
+            INCLUDE:
+            - Important decisions, announcements, action items
             - New information learned or insights gained
-            - Relevant for future reference or follow-up
-            - Significant developments or changes
-            - Key discussions that impact the group or individuals
-            - Important questions asked and their answers
-            - Administrative announcements or procedures
+            - Key discussions that impact the group
+            - Important questions and answers
+            - Administrative announcements
 
             EXCLUDE:
-            - Casual small talk, greetings, or social pleasantries, irrelevant jokes or memes
-            - Repetitive or redundant discussions.
-            - Temporary or time-sensitive information that's no longer relevant
+            - Casual small talk, greetings, jokes
+            - Repetitive discussions
+            - Temporary information
 
-            SUMMARY STRUCTURE:
-            - Start with: "📋 Comprehensive Summary of Today's Important Discussions"
-            - Use clear section headers like "🎯 Key Decisions", "📚 New Information", "⚡ Action Items"
-            - Include specific details, quotes, and key phrases when relevant
-            - Tag ALL users when mentioning them (e.g., @972536150150)
-            - Mention timing/chronology when it adds context
-            - Include any action items, decisions made, or follow-ups needed
-            - End with a "📝 Summary" section of key takeaways
-    
-            FORMATTING: Your output is a WhatsApp message! *bold* for headers/emphasis, _italic_ for quotes, emojis for organization, bullet points for lists.
-
-            QUALITY REQUIREMENTS:
-            - Be thorough and comprehensive - include ALL important content. Don't get stuck on one topic
-            - Focus on lasting value and future relevance
-            - Maintain readability and clear organization
-            - Use A LOT of emojis and formatting to improve readability
-            - You MUST respond with the same language as the request
-            - RESPONSE LENGTH: Keep the summary comprehensive but concise. Aim for 1200 characters for most summaries, but make sure words don't get cut in the middle of the output prompt.
-            - GENERAL HIGHLIGHTS: Only include if there's space and only in a summarized, non-specific way
+            FORMAT:
+            - Start with: "📋 Summary of Today's Important Discussions"
+            - Use headers like "🎯 Key Decisions", "📚 New Information", "⚡ Action Items"
+            - Tag users with @number when mentioning them
+            - Use *bold* for headers, _italic_ for quotes, emojis for organization
+            - Keep response under 3000 characters
+            - Respond in the same language as the request
             """,
-            output_type=str,
-            max_tokens=30000,
         )
 
         response = await agent.run(
@@ -152,13 +146,21 @@ class Router(BaseHandler):
         # If pydantic_ai provides usage info
         if hasattr(response, 'usage'):
             logger.info(f"Tokens used: {response.usage}")
-            print(f"Tokens used: {response.usage}")
 
+        response_text = response.output
+        logger.info(f"Sending summary response (length: {len(response_text)} characters)")
+        
+        # Check if response is too long (WhatsApp has a limit of ~4096 characters)
+        if len(response_text) > 4000:
+            logger.warning(f"Response too long ({len(response_text)} chars), truncating to 4000 chars")
+            response_text = response_text[:4000] + "...\n\n[Response truncated due to length]"
+        
         await self.send_message(
             message.chat_jid,
-            response.output,
+            response_text,
             message.message_id,
         )
+        logger.info("=== SUMMARIZE METHOD END ===")
 
     async def about(self, message):
         await self.send_message(
