@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Dict, Optional, Any
+from typing import Dict, Optional
 
 
 class PhoneMapper:

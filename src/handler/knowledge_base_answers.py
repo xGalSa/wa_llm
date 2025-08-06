@@ -25,8 +25,6 @@ class KnowledgeBaseAnswers(BaseHandler):
     async def __call__(self, message: Message):
         # Ensure message.text is not None before passing to generation_agent
         if message.text is None:
-            # Remove sender logging for privacy
-            # logger.warning(f"Received message with no text from {message.sender_jid}")
             return
         # get the last 7 messages
         stmt = (
@@ -54,10 +52,7 @@ class KnowledgeBaseAnswers(BaseHandler):
                     await message.group.get_related_community_groups(self.session)
                 )
 
-        # Consider adding cosine distance threshold
-        # cosine_distance_threshold = 0.8
         limit_topics = 10
-        # query for user query
         q = (
             select(
                 KBTopic,
@@ -66,7 +61,6 @@ class KnowledgeBaseAnswers(BaseHandler):
                 ),
             )
             .order_by(KBTopic.embedding.cosine_distance(embedded_question))
-            # .where(KBTopic.embedding.cosine_distance(embedded_question) < cosine_distance_threshold)
             .limit(limit_topics)
         )
         if select_from:
@@ -78,29 +72,11 @@ class KnowledgeBaseAnswers(BaseHandler):
         retrieved_topics = await self.session.exec(q)
 
         similar_topics = []
-        similar_topics_distances = []
         for kb_topic, topic_distance in retrieved_topics:  # Unpack the tuple
             similar_topics.append(f"{kb_topic.subject} \n {kb_topic.summary}")
-            similar_topics_distances.append(f"topic_distance: {topic_distance}")
-
-        sender_number = parse_jid(message.sender_jid).user
         generation_response = await self.generation_agent(
             message.text, similar_topics, message.sender_jid, history
         )
-        # Remove privacy-sensitive logging
-        # logger.info(
-        #     "RAG Query Results:\n"
-        #     f"Sender: {sender_number}\n"
-        #     f"Question: {message.text}\n"
-        #     f"Rephrased Question: {rephrased_response.output}\n"
-        #     f"Chat JID: {message.chat_jid}\n"
-        #     f"Retrieved Topics: {len(similar_topics)}\n"
-        #     f"Similarity Scores: {similar_topics_distances}\n"
-        #     "Topics:\n"
-        #     + "\n".join(f"- {topic[:100]}..." for topic in similar_topics)
-        #     + "\n"
-        #     f"Generated Response: {generation_response.output}"
-        # )
 
         await self.send_message(
             message.chat_jid,

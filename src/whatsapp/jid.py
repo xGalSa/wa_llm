@@ -110,7 +110,6 @@ def normalize_jid(jid: Union[JID, str]) -> str:
 # Known JID servers on WhatsApp
 DefaultUserServer = "s.whatsapp.net"
 GroupServer = "g.us"
-LegacyUserServer = "c.us"
 BroadcastServer = "broadcast"
 HiddenUserServer = "lid"
 
@@ -120,5 +119,3 @@ GroupServerJID = new_jid("", GroupServer)
 ServerJID = new_jid("", DefaultUserServer)
 BroadcastServerJID = new_jid("", BroadcastServer)
 StatusBroadcastJID = new_jid("status", BroadcastServer)
-PSAJID = new_jid("0", LegacyUserServer)
-OfficialBusinessJID = new_jid("16505361212", LegacyUserServer)
