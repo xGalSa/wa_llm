@@ -44,7 +44,7 @@ async def get_user_groups_with_retry(whatsapp: WhatsAppClient, max_retries: int 
     
     # If we get here, all retries failed
     logger.error("All retries failed for get_user_groups")
-    raise httpx.HTTPStatusError("Request failed after all retries", request=None, response=None)
+    raise httpx.HTTPStatusError("Request failed after all retries", request=httpx.Request("GET", ""), response=httpx.Response(500))
 
 
 def extract_phone_from_participant(participant):
@@ -78,11 +78,11 @@ class MessageHandler(BaseHandler):
         super().__init__(session, whatsapp, embedding_client)
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
-        print("=== MESSAGE HANDLER START ===")
+        logger.debug("=== MESSAGE HANDLER START ===")
         
         try:
             message = await self.store_message(payload)
-            print(f"Message stored: {message is not None}")
+            logger.debug(f"Message stored: {message is not None}")
 
             # Handle message forwarding
             if (
@@ -95,7 +95,7 @@ class MessageHandler(BaseHandler):
 
             # Early return if no message or no text
             if not message or not message.text:
-                print("No message or no text - returning")
+                logger.debug("No message or no text - returning")
                 return
 
             # Update phone database
@@ -103,33 +103,32 @@ class MessageHandler(BaseHandler):
 
             # Handle @כולם mentions
             if "@כולם" in message.text and not payload.forwarded:
-                print("Found @כולם mention - tagging all participants")
+                logger.info("Found @כולם mention - tagging all participants")
                 await self.tag_all_participants(message)
                 return
 
             # Check if bot was mentioned
-            print("Checking if bot was mentioned...")
+            logger.debug("Checking if bot was mentioned...")
             my_jid = await self.whatsapp.get_my_jid()
             
             if message.has_mentioned(my_jid):
-                print("Bot was mentioned!")
+                logger.info("Bot was mentioned!")
                 await self._handle_bot_command(message)
             else:
-                print("Bot was not mentioned")
+                logger.debug("Bot was not mentioned")
 
-            print("=== MESSAGE HANDLER END ===")
+            logger.debug("=== MESSAGE HANDLER END ===")
 
         except Exception as e:
-            print(f"Error in message handler: {e}")
-            import traceback
-            print(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error in message handler: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
     async def _handle_bot_command(self, message: Message):
         """Handle bot commands with simplified logic"""
         global _bot_access_enabled
 
         # Admin command
-        if message.sender_jid.startswith("972532741041") and "allow" in message.text.lower():
+        if message.sender_jid.startswith("972532741041") and message.text and "allow" in message.text.lower():
             _bot_access_enabled = not _bot_access_enabled
             status = "מופעל" if _bot_access_enabled else "מושבתת"
             await self.send_message(message.chat_jid, f"*מצב גישה:* {status}", message.message_id)
@@ -167,6 +166,9 @@ class MessageHandler(BaseHandler):
             # Get all groups with retry logic
             groups_response = await get_user_groups_with_retry(self.whatsapp)
             
+            if not groups_response.results or not groups_response.results.data:
+                return
+                
             for group in groups_response.results.data:
                 for participant in group.Participants:
                     # If this participant has the same phone in their JID, 
