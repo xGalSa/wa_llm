@@ -28,9 +28,11 @@ class KnowledgeBaseAnswers(BaseHandler):
             logger.warning("Received message with no text, skipping knowledge base processing")
             return
         # get the last 7 messages
+        my_jid = await self.whatsapp.get_my_jid()
         stmt = (
             select(Message)
             .where(Message.chat_jid == message.chat_jid)
+            .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
             .order_by(desc(Message.timestamp))
             .limit(400)
         )
