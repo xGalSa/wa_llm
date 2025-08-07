@@ -163,19 +163,26 @@ class MessageHandler:
             my_jid = await self.whatsapp.get_my_jid()
             is_mentioned = message.has_mentioned(my_jid)
             
+            # Check for special commands that should be processed even without mention
+            is_special_command = False
+            if message.text:
+                special_commands = ["@כולם", "@everyone"]
+                is_special_command = any(cmd in message.text for cmd in special_commands)
+            
             logger.info(f"Bot mentioned: {is_mentioned}")
+            logger.info(f"Special command detected: {is_special_command}")
             logger.info(f"Message text: {message.text}")
             logger.info(f"Bot JID: {my_jid}")
             logger.info(f"Message sender JID: {message.sender_jid}")
             logger.info(f"Message chat JID: {message.chat_jid}")
             
-            if is_mentioned:
-                logger.info("Bot is mentioned, routing to handler")
+            if is_mentioned or is_special_command:
+                logger.info("Bot is mentioned or special command detected, routing to handler")
                 logger.info("About to call router...")
                 await self.router(message)
                 logger.info("Router completed successfully")
             else:
-                logger.info("Bot not mentioned, skipping")
+                logger.info("Bot not mentioned and no special command, skipping")
                 
         except Exception as e:
             logger.error(f"Error in bot command handler: {e}", exc_info=True)
