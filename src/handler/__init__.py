@@ -4,7 +4,7 @@ import httpx
 import traceback
 from collections import deque
 from datetime import datetime, timezone
-from threading import Lock
+
 from typing import Any, Optional
 
 from sqlmodel import select
@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Global cache for processed message IDs across all webhook calls
 _processed_messages_cache: deque[str] = deque(maxlen=1000)
-_cache_lock = Lock()
 
 # Global bot access control
 _bot_access_enabled = False
