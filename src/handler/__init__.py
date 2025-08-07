@@ -175,7 +175,7 @@ class MessageHandler:
             # Check for special commands that should be processed even without mention
             is_special_command = False
             if message.text:
-                special_commands = ["@כולם", "@everyone"]
+                special_commands = ["@כולם", "@everyone", "משימה חדשה"]
                 is_special_command = any(cmd in message.text for cmd in special_commands)
             
             logger.info(
