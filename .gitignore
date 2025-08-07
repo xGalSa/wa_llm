@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Google Tasks
+token.json
+token.json.b64
+client_secret.json
+
 # C extensions
 *.so
 
