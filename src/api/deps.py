@@ -35,5 +35,4 @@ async def get_handler(
     embedding_client: Annotated[AsyncClient, Depends(get_text_embebedding)],
 ) -> MessageHandler:
     # Create a new handler instance for each request to avoid session management issues
-    # The global cache in the handler will still prevent duplicate processing
     return MessageHandler(session, whatsapp, embedding_client)

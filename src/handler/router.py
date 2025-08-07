@@ -3,8 +3,6 @@ from datetime import datetime, timedelta, date
 from enum import Enum
 
 import os, re, json, base64, asyncio
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
@@ -27,6 +25,8 @@ SCOPES = ["https://www.googleapis.com/auth/tasks"]
 
 def load_google_tasks_credentials():
     """Load Google OAuth credentials from base64 env variable only."""
+    # Lazy import to avoid hard dependency during test collection or when tasks feature isn't used
+    from google.oauth2.credentials import Credentials  # type: ignore[import-not-found]
     b64 = os.getenv("GOOGLE_TASKS_TOKEN_B64")
     if not b64:
         raise RuntimeError("GOOGLE_TASKS_TOKEN_B64 environment variable is required for Google Tasks integration")
@@ -34,6 +34,8 @@ def load_google_tasks_credentials():
     return Credentials.from_authorized_user_info(data, SCOPES)
 
 def get_tasks_service():
+    # Lazy import to avoid hard dependency during test collection or when tasks feature isn't used
+    from googleapiclient.discovery import build  # type: ignore[import-not-found]
     creds = load_google_tasks_credentials()
     return build("tasks", "v1", credentials=creds, cache_discovery=False)
 
@@ -339,7 +341,7 @@ class Router(BaseHandler):
                 logger.info(f"Final tagged message: '{tagged_message}'")
                 
                 # Send either the tagged message or fallback
-                response_text = tagged_message.strip() or " כולם מוזמנים! 🎉"
+                response_text = tagged_message.strip() or "כולם מוזמנים! 🎉"
                 logger.info(f"Sending response: '{response_text}'")
                 await self.send_message(message.chat_jid, response_text, message.message_id)
                 return

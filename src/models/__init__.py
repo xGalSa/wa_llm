@@ -1,3 +1,8 @@
+# Ensure 'src.models' and 'models' resolve to the same module to avoid duplicate model definitions
+import sys as _sys
+_sys.modules.setdefault('models', _sys.modules.get(__name__, None) or _sys.modules[__name__])
+_sys.modules.setdefault('src.models', _sys.modules[__name__])
+
 from .group import Group, BaseGroup
 from .knowledge_base_topic import KBTopic, KBTopicCreate
 from .message import Message, BaseMessage

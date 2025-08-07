@@ -86,7 +86,7 @@ class KnowledgeBaseAnswers(BaseHandler):
 
         sender_number = parse_jid(message.sender_jid).user
         generation_response = await self.generation_agent(
-            message.text, similar_topics, message.sender_jid, history
+            message.text, similar_topics, sender_number, history
         )
         # Remove privacy-sensitive logging
         # logger.info(

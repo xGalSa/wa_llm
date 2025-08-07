@@ -1,11 +1,5 @@
-import asyncio
 import logging
 import httpx
-import traceback
-
-from datetime import datetime, timezone
-
-from typing import Any, Optional
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -88,9 +82,17 @@ class MessageHandler:
             logger.info(f"Sender JID: {message.sender_jid}")
             logger.info(f"Message timestamp: {message.timestamp}")
 
-            # Store message in database
-            await self._store_message(message)
-            logger.info(f"Message stored in database")
+            # Skip storing and handling for messages without text unless they include special commands or mentions
+            if message.text is None or message.text.strip() == "":
+                logger.info("Empty/no-text message; skipping processing")
+                return
+
+            # Store message in database; only continue if this is the first time we see it
+            is_new_message = await self._store_message(message)
+            logger.info(f"Message stored in database (is_new={is_new_message})")
+            if not is_new_message:
+                logger.info("Duplicate webhook for existing message; skipping handling")
+                return
 
             # Check if message is from bot itself
             if await self._is_bot_message(message.sender_jid):
@@ -126,15 +128,21 @@ class MessageHandler:
             # If we can't determine, assume it's not from bot to be safe
             return False
 
-    async def _store_message(self, message: Message) -> None:
-        """Store message in database."""
+    async def _store_message(self, message: Message) -> bool:
+        """Store message in database.
+        Returns True if newly stored, False if it already existed or failed.
+        """
         try:
+            # Do not store messages without text to avoid DB noise
+            if not message.text or message.text.strip() == "":
+                logger.info("Skipping store: message has no text")
+                return False
             # Check if message already exists
             existing_message = await self.session.get(Message, message.message_id)
             
             if existing_message:
                 logger.info(f"Message {message.message_id} already exists in database")
-                return
+                return False
 
             # Store sender if not exists
             sender = await self.session.get(Sender, message.sender_jid)
@@ -149,10 +157,12 @@ class MessageHandler:
             self.session.add(message)
             await self.session.commit()
             logger.info(f"Stored message {message.message_id} in database")
+            return True
             
         except Exception as e:
             logger.error(f"Error storing message: {e}", exc_info=True)
             await self.session.rollback()
+            return False
 
     async def _handle_bot_command(self, message: Message) -> None:
         """Handle bot commands and mentions."""
