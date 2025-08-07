@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, AsyncGenerator
 
 from fastapi import Depends, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -8,7 +8,7 @@ from whatsapp import WhatsAppClient
 from voyageai.client_async import AsyncClient
 
 
-async def get_db_async_session(request: Request) -> AsyncSession:
+async def get_db_async_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
     assert request.app.state.async_session, "AsyncSession generator not initialized"
     async with request.app.state.async_session() as session:
         try:
@@ -34,4 +34,6 @@ async def get_handler(
     whatsapp: Annotated[WhatsAppClient, Depends(get_whatsapp)],
     embedding_client: Annotated[AsyncClient, Depends(get_text_embebedding)],
 ) -> MessageHandler:
+    # Create a new handler instance for each request to avoid session management issues
+    # The global cache in the handler will still prevent duplicate processing
     return MessageHandler(session, whatsapp, embedding_client)

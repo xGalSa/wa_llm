@@ -73,21 +73,24 @@ class Router(BaseHandler):
             return
             
         route = await self._route(message.text)
-        logger.info(f"Route determined: {route}")
         
         match route:
             case IntentEnum.summarize:
                 logger.info("Calling summarize handler")
                 await self.summarize(message)
+                logger.info("Summarize handler completed")
             case IntentEnum.ask_question:
                 logger.info("Calling ask_knowledge_base handler")
                 await self.ask_knowledge_base(message)
+                logger.info("Knowledge base handler completed")
             case IntentEnum.about:
                 logger.info("Calling about handler")
                 await self.about(message)
+                logger.info("About handler completed")
             case IntentEnum.other:
                 logger.info("Calling default_response handler")
                 await self.default_response(message)
+                logger.info("Default response handler completed")
 
     async def summarize(self, message: Message):
         logger.info("=== SUMMARIZE METHOD START ===")

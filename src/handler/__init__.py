@@ -75,27 +75,32 @@ class MessageHandler(BaseHandler):
         self.whatsapp_group_link_spam = WhatsappGroupLinkSpamHandler(
             session, whatsapp, embedding_client
         )
-        self.processed_messages = set()  # Track processed message IDs
+        self.processed_messages = set()  # Simple instance-level cache
         super().__init__(session, whatsapp, embedding_client)
 
     async def __call__(self, payload: WhatsAppWebhookPayload):
         logger.debug("=== MESSAGE HANDLER START ===")
         
         try:
+            # Check for duplicate message processing
+            if payload.message and payload.message.id:
+                if payload.message.id in self.processed_messages:
+                    logger.info(f"Message {payload.message.id} already processed, skipping")
+                    return
+                self.processed_messages.add(payload.message.id)
+                # Keep cache size manageable (sets don't preserve order, so just clear when too large)
+                if len(self.processed_messages) > 100:
+                    self.processed_messages.clear()
+
+            # Check if message is too old (more than 5 minutes) BEFORE storing
+            message_age = datetime.now(timezone.utc) - payload.timestamp
+            if message_age.total_seconds() > 300:  # 5 minutes
+                logger.info(f"Message too old ({message_age.total_seconds():.1f}s), skipping")
+                return
+
+            # Store the message
             message = await self.store_message(payload)
             logger.debug(f"Message stored: {message is not None}")
-
-            # Check for duplicate message processing
-            if message and message.message_id in self.processed_messages:
-                logger.info(f"Message {message.message_id} already processed, skipping")
-                return
-            
-            # Add message to processed set
-            if message:
-                self.processed_messages.add(message.message_id)
-                # Keep only last 1000 processed messages to prevent memory issues
-                if len(self.processed_messages) > 1000:
-                    self.processed_messages = set(list(self.processed_messages)[-1000:])
 
             # Handle message forwarding
             if (
@@ -160,10 +165,11 @@ class MessageHandler(BaseHandler):
             logger.debug("Checking if bot was mentioned...")
             
             mention_check = message.has_mentioned(my_jid)
-            logger.info(f"Mention check: {mention_check}, message text: '{message.text}'")
+            logger.info(f"Mention check: {mention_check}, message text: '{message.text}', bot JID: {my_jid}")
             if mention_check:
-                logger.info("Bot was mentioned!")
+                logger.info("Bot was mentioned! Processing command...")
                 await self._handle_bot_command(message)
+                logger.info("Bot command processing completed")
             else:
                 logger.debug("Bot was not mentioned")
 
@@ -177,22 +183,27 @@ class MessageHandler(BaseHandler):
         """Handle bot commands with simplified logic"""
         global _bot_access_enabled
 
+        logger.info(f"Handling bot command from {message.sender_jid}: '{message.text}'")
+
         # Admin command
         if message.sender_jid.startswith("972532741041") and message.text and "allow" in message.text.lower():
             _bot_access_enabled = not _bot_access_enabled
             status = "מופעל" if _bot_access_enabled else "מושבתת"
             await self.send_message(message.chat_jid, f"*מצב גישה:* {status}", message.message_id)
+            logger.info(f"Bot access toggled to: {status}")
             return
 
         # Check access permissions
         is_admin = message.sender_jid.startswith("972532741041")
         if not (_bot_access_enabled or is_admin):
             await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
+            logger.info("Access denied - bot disabled and user not admin")
             return
 
         # Route to appropriate handler using Router's __call__ method
-        logger.debug("Routing message to appropriate handler")
+        logger.info("Routing message to appropriate handler")
         await self.router(message)  # This calls Router.__call__(message)
+        logger.info("Bot command routing completed")
 
     async def update_global_phone_database(self, message: Message):
         """Update the global phone number database when messages come in"""

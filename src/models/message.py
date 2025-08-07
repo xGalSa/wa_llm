@@ -32,7 +32,7 @@ class BaseMessage(SQLModel):
 
     @model_validator(mode="before")
     @classmethod
-    def validate_chat_jid(self, data) -> dict:
+    def validate_chat_jid(cls, data) -> dict:
         if "chat_jid" not in data:
             return data
 
@@ -52,6 +52,9 @@ class BaseMessage(SQLModel):
     def has_mentioned(self, jid: str | JID) -> bool:
         if isinstance(jid, str):
             jid = parse_jid(jid)
+
+        if not self.text:
+            return False
 
         return f"@{jid.user}" in self.text
 
@@ -75,7 +78,11 @@ class Message(BaseMessage, table=True):
     def from_webhook(cls, payload: WhatsAppWebhookPayload) -> "Message":
         """Create Message instance from WhatsApp webhook payload."""
         if not payload.message:
-            payload.message = PayloadMessage(id=f"na-{payload.timestamp.timestamp()}")
+            payload.message = PayloadMessage(
+                id=f"na-{payload.timestamp.timestamp()}",
+                replied_id=None,
+                quoted_message=None
+            )
         assert payload.message, "Missing message"
         assert payload.message.id, "Missing message ID"
         assert payload.from_, "Missing sender"
@@ -114,7 +121,7 @@ class Message(BaseMessage, table=True):
     def _extract_message_text(payload: WhatsAppWebhookPayload) -> Optional[str]:
         """Extract message text based on content type."""
         # Return direct message text if available
-        if payload.message.text:
+        if payload.message and payload.message.text:
             return payload.message.text
 
         # Map content types to their caption attributes
