@@ -273,6 +273,14 @@ class Router(BaseHandler):
             await self.send_message(message.chat_jid, response, message.message_id)
             logger.info("task created")
 
+        except ModuleNotFoundError as e:
+            # Provide a clearer message when the Google API client is not installed in the image
+            logger.exception(f"task failed (missing dependency): {e}")
+            await self.send_message(
+                message.chat_jid,
+                "התכונה 'יצירת משימות' אינה זמינה כרגע בשרת (תלות חסרה). בקש מהמנהל לפרוס גרסה מעודכנת.",
+                message.message_id,
+            )
         except Exception as e:
             logger.exception(f"task failed: {e}")
             await self.send_message(

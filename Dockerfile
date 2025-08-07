@@ -7,13 +7,13 @@ RUN apt-get install -qyy -o APT::Install-Recommends=false -o APT::Install-Sugges
 
 WORKDIR /app
 
-RUN --mount=type=secret,id=netrc,target=/root/.netrc,mode=0600 \
-    --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=./uv.lock,target=uv.lock \
-    --mount=type=bind,source=./pyproject.toml,target=pyproject.toml \
-    --mount=type=bind,source=./.python-version,target=.python-version \
+# Copy only dependency files first to leverage Docker layer caching and ensure
+# dependencies (including google-api-python-client) are installed in the image
+COPY pyproject.toml uv.lock .python-version ./
+RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
+# Copy the full application source
 COPY . /app
 
 FROM python:3.12-slim-bookworm

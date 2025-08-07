@@ -25,6 +25,10 @@ services:
     environment:
       - DB_URI=postgresql+asyncpg://user:password@postgres:5432/postgres
       - WHATSAPP_HOST=http://whatsapp:3000
+      # Optional Google Tasks integration for local runs
+      # Provide base64-encoded Google OAuth token JSON to enable task creation
+      # GOOGLE_TASKS_TOKEN_B64=${GOOGLE_TASKS_TOKEN_B64}
+      # GOOGLE_TASKS_LIST_ID=${GOOGLE_TASKS_LIST_ID}
 
 volumes:
   wa_llm_whatsapp:
