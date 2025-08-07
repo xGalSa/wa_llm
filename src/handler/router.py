@@ -2,6 +2,10 @@ import logging
 from datetime import datetime, timedelta, date
 from enum import Enum
 
+import os, re, json, base64, asyncio
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from sqlmodel import desc, select
@@ -18,12 +22,51 @@ from .base_handler import BaseHandler
 # Creating an object
 logger = logging.getLogger(__name__)
 
+# Google Tasks integration helpers
+SCOPES = ["https://www.googleapis.com/auth/tasks"]
+
+def load_google_tasks_credentials():
+    """Load Google OAuth credentials from base64 env variable only."""
+    b64 = os.getenv("GOOGLE_TASKS_TOKEN_B64")
+    if not b64:
+        raise RuntimeError("GOOGLE_TASKS_TOKEN_B64 environment variable is required for Google Tasks integration")
+    data = json.loads(base64.b64decode(b64).decode())
+    return Credentials.from_authorized_user_info(data, SCOPES)
+
+def get_tasks_service():
+    creds = load_google_tasks_credentials()
+    return build("tasks", "v1", credentials=creds, cache_discovery=False)
+
+def _parse_task(text: str):
+    """
+    Minimal parser: if the message contains "משימה חדשה", the task title is
+    everything that comes after it on the same line. Returns the title string,
+    or None if missing.
+    """
+    if not text:
+        return None
+    trigger = "משימה חדשה"
+    idx = text.find(trigger)
+    if idx == -1:
+        return None
+    title = text[idx + len(trigger):].strip(" \t-:")
+    return title or None
+
+def _create_google_task_sync(title: str, notes: str | None = None, list_id: str | None = None):
+    svc = get_tasks_service()
+    body = {"title": title}
+    if notes:
+        body["notes"] = notes
+    tasklist = list_id or "@default"
+    return svc.tasks().insert(tasklist=tasklist, body=body).execute()
+
 
 class IntentEnum(str, Enum):
     summarize = "summarize"
     ask_question = "ask_question"
     about = "about"
     tag_all = "tag_all"
+    task = "task"
     other = "other"
 
 
@@ -64,6 +107,11 @@ class Router(BaseHandler):
         if any(phrase in message_lower for phrase in ["@כולם", "@everyone"]):
             logger.info("Routing to tag_all")
             return IntentEnum.tag_all
+
+        # Check for task intent (trigger phrase appears anywhere)
+        if "משימה חדשה" in message:
+            logger.info("Routing to task")
+            return IntentEnum.task
             
         # Default to ask_question for everything else
         logger.info("Routing to ask_question (default)")
@@ -100,6 +148,10 @@ class Router(BaseHandler):
                 logger.info("Calling tag_all_participants handler")
                 await self.tag_all_participants(message)
                 logger.info("Tag all participants handler completed")
+            case IntentEnum.task:
+                logger.info("Calling task handler")
+                await self.task(message)
+                logger.info("Task handler completed")
             case IntentEnum.other:
                 logger.info("Calling default_response handler")
                 await self.default_response(message)
@@ -184,6 +236,50 @@ class Router(BaseHandler):
             "I'm an open-source bot created for the GenAI Israel community - https://llm.org.il.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\nPlease send me PRs and star me at https://github.com/ilanbenb/wa_llm ⭐️",
             message.message_id,
         )
+
+    async def task(self, message: Message):
+        logger.info("=== TASK METHOD START ===")
+        try:
+            text = message.text or ""
+            title = _parse_task(text)
+            if not title:
+                logger.info("No 'משימה חדשה' keyword found or no text after trigger")
+                await self.send_message(
+                    message.chat_jid,
+                    "לא מצאתי טקסט אחרי 'משימה חדשה'. נסה למשל: 'משימה חדשה לעבור על המצגת'",
+                    message.message_id,
+                )
+                return
+
+            # Optional: choose a specific list via env
+            list_id = os.getenv("GOOGLE_TASKS_LIST_ID") or "@default"
+
+            # Notes can include origin chat and sender for traceability
+            notes = f"From chat: {message.chat_jid}\nSender: {message.sender_jid}"
+
+            logger.info(f"Creating Google Task: title='{title}', list='{list_id}'")
+
+            # Run blocking Google API call in a thread
+            created = await asyncio.to_thread(
+                _create_google_task_sync,
+                title,
+                notes,
+                list_id,
+            )
+
+            response = f"נוספה משימה: {created.get('title')}"
+            await self.send_message(message.chat_jid, response, message.message_id)
+            logger.info("Task created successfully")
+
+        except Exception as e:
+            logger.exception(f"Failed to create Google Task: {e}")
+            await self.send_message(
+                message.chat_jid,
+                "לא הצלחתי ליצור משימה כרגע. ודא שהטוקן תקין ונסה שוב.",
+                message.message_id,
+            )
+        finally:
+            logger.info("=== TASK METHOD END ===")
 
     async def default_response(self, message):
         await self.send_message(
