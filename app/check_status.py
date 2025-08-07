@@ -23,7 +23,7 @@ async def main():
     settings = CheckStatusSettings()
 
     logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(funcName)s:%(lineno)d] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         level=logging.DEBUG,
     )
