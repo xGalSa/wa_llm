@@ -23,6 +23,7 @@ class IntentEnum(str, Enum):
     summarize = "summarize"
     ask_question = "ask_question"
     about = "about"
+    tag_all = "tag_all"
     other = "other"
 
 
@@ -59,6 +60,11 @@ class Router(BaseHandler):
             logger.info("Routing to about")
             return IntentEnum.about
             
+        # Check for tag_all intent (@כולם)
+        if any(phrase in message_lower for phrase in ["@כולם", "@everyone"]):
+            logger.info("Routing to tag_all")
+            return IntentEnum.tag_all
+            
         # Default to ask_question for everything else
         logger.info("Routing to ask_question (default)")
         return IntentEnum.ask_question
@@ -90,6 +96,10 @@ class Router(BaseHandler):
                 logger.info("Calling about handler")
                 await self.about(message)
                 logger.info("About handler completed")
+            case IntentEnum.tag_all:
+                logger.info("Calling tag_all_participants handler")
+                await self.tag_all_participants(message)
+                logger.info("Tag all participants handler completed")
             case IntentEnum.other:
                 logger.info("Calling default_response handler")
                 await self.default_response(message)
@@ -181,3 +191,67 @@ class Router(BaseHandler):
             "מצטער, אבל אני לא חושב שאני יכול לעזור עם זה כרגע 😅.\n אני יכול לעזור לך להתעדכן בהודעות הצ'אט או לענות על שאלות בהתבסס על הידע של הקבוצה.",
             message.message_id,
         )
+
+    async def tag_all_participants(self, message: Message):
+        """Tag all participants in the group when @כולם is mentioned"""
+        try:
+            # Get bot's phone number to exclude it
+            my_jid = await self.whatsapp.get_my_jid()
+            bot_phone = my_jid.user
+            logger.info(f"Bot phone: {bot_phone}")
+            
+            # Get all groups - single attempt only
+            from src.handler import get_user_groups
+            groups_response = await get_user_groups(self.whatsapp)
+            
+            # Add null check for results
+            if not groups_response.results or not groups_response.results.data:
+                logger.info("No groups data found")
+                await self.send_message(message.chat_jid, "📢 כולם מוזמנים!", message.message_id)
+                return
+            
+            # Find the target group first
+            target_group = next(
+                (group for group in groups_response.results.data if group.JID == message.chat_jid),
+                None
+            )
+            
+            if target_group:
+                logger.info(f"Found target group with {len(target_group.Participants)} participants")
+                
+                # Tag everyone except the bot
+                tagged_message = ""
+                for participant in target_group.Participants:
+                    logger.info(f"Processing participant: {participant.JID}")
+                    
+                    # Extract phone number using our helper function
+                    from src.handler import extract_phone_from_participant
+                    phone = extract_phone_from_participant(participant)
+                    logger.info(f"Got phone: {phone} for JID: {participant.JID}")
+                    
+                    # Only tag if we have a real phone number and it's not the bot
+                    if phone and phone != bot_phone:
+                        tagged_message += f"@{phone} "
+                        logger.info(f"Added to tagged message: @{phone}")
+                
+                logger.info(f"Tagged message so far: '{tagged_message}'")
+                
+                # If no phone numbers found, just use the fallback message
+                if not tagged_message.strip():
+                    logger.info("No participants tagged, will use fallback message")
+                
+                logger.info(f"Final tagged message: '{tagged_message}'")
+                
+                # Send either the tagged message or fallback
+                response_text = tagged_message.strip() or " כולם מוזמנים! 🎉"
+                logger.info(f"Sending response: '{response_text}'")
+                await self.send_message(message.chat_jid, response_text, message.message_id)
+                return
+            else:
+                logger.info("Target group not found")
+                    
+        except Exception as e:
+            logger.error(f"Error tagging participants: {e}")
+        
+        # Fallback
+        await self.send_message(message.chat_jid, "📢 כולם מוזמנים!", message.message_id)
