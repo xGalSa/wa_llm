@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     logfire_token: str
 
+    # Google Tasks integration
+    # If set in .env, export to process env so helper functions using os.getenv can access
+    google_tasks_token_b64: Optional[str] = None
+    google_tasks_list_id: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -44,5 +49,11 @@ class Settings(BaseSettings):
 
         if self.logfire_token:
             environ["LOGFIRE_TOKEN"] = self.logfire_token
+
+        # Propagate Google Tasks settings to environment for modules that read via os.getenv
+        if self.google_tasks_token_b64:
+            environ["GOOGLE_TASKS_TOKEN_B64"] = self.google_tasks_token_b64
+        if self.google_tasks_list_id:
+            environ["GOOGLE_TASKS_LIST_ID"] = self.google_tasks_list_id
 
         return self

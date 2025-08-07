@@ -1,5 +1,0 @@
-# Dockerfile.whatsapp
-FROM aldinokemal2104/go-whatsapp-web-multidevice:v7.2.1
-
-# The image already has everything needed
-EXPOSE 3000
