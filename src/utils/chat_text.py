@@ -1,7 +1,7 @@
 from typing import List
 
-from models import Message
-from whatsapp.jid import parse_jid
+from src.models import Message
+from src.whatsapp.jid import parse_jid
 
 
 def chat2text(history: List[Message]) -> str:

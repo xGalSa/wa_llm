@@ -3,8 +3,8 @@ from typing import Annotated, Dict, Any
 from fastapi import APIRouter, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from load_new_kbtopics import topicsLoader
-from whatsapp import WhatsAppClient
+from src.load_new_kbtopics import topicsLoader
+from src.whatsapp.client import WhatsAppClient
 from voyageai.client_async import AsyncClient
 from .deps import get_db_async_session, get_whatsapp, get_text_embebedding
 

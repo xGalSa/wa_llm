@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from models import Group, BaseGroup, Sender, BaseSender, upsert
+from src.models import Group, BaseGroup, Sender, BaseSender, upsert
 from .client import WhatsAppClient
 
 

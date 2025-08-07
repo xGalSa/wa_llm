@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, List, Optional
 from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
-from whatsapp.jid import normalize_jid
+from src.whatsapp.jid import normalize_jid
 
 if TYPE_CHECKING:
     from .group import Group

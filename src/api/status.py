@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import text
 
-from whatsapp import WhatsAppClient
+from src.whatsapp.client import WhatsAppClient
 
 from .deps import get_db_async_session, get_whatsapp
 

@@ -16,11 +16,11 @@ from tenacity import (
 )
 from voyageai.client_async import AsyncClient
 
-from models import KBTopicCreate, Group, Message
-from models.knowledge_base_topic import KBTopic
-from models.upsert import bulk_upsert
-from utils.voyage_embed_text import voyage_embed_text
-from whatsapp import WhatsAppClient
+from src.models import KBTopicCreate, Group, Message
+from src.models.knowledge_base_topic import KBTopic
+from src.models.upsert import bulk_upsert
+from src.utils.voyage_embed_text import voyage_embed_text
+from src.whatsapp.client import WhatsAppClient
 
 logger = logging.getLogger(__name__)
 

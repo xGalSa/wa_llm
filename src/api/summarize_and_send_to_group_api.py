@@ -3,8 +3,8 @@ from typing import Annotated, Dict, Any
 from fastapi import APIRouter, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from whatsapp import WhatsAppClient
-from summarize_and_send_to_groups import summarize_and_send_to_groups
+from src.whatsapp.client import WhatsAppClient
+from src.summarize_and_send_to_groups import summarize_and_send_to_groups
 from .deps import get_db_async_session, get_whatsapp
 
 # Create router for send summaries to groups endpoints

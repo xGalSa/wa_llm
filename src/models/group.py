@@ -15,7 +15,7 @@ from sqlmodel import (
 )
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from whatsapp.jid import normalize_jid
+from src.whatsapp.jid import normalize_jid
 
 if TYPE_CHECKING:
     from .message import Message

@@ -8,11 +8,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 import logging
 import logfire
 
-from api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, webhook
-import models  # noqa
-from config import Settings
-from whatsapp import WhatsAppClient
-from whatsapp.init_groups import gather_groups
+from src.api import load_new_kbtopics_api, status, summarize_and_send_to_group_api, webhook
+import src.models  # noqa
+from src.config import Settings
+from src.whatsapp.client import WhatsAppClient
+from src.whatsapp.init_groups import gather_groups
 from voyageai.client_async import AsyncClient
 
 settings = Settings()  # pyright: ignore [reportCallIssue]
@@ -22,10 +22,11 @@ settings = Settings()  # pyright: ignore [reportCallIssue]
 async def lifespan(app: FastAPI):
     global settings
     # Create and configure logger
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        level=settings.log_level,
+        level=log_level,
     )
 
     app.state.settings = settings

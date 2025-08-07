@@ -2,7 +2,7 @@ import logging
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
-from models import (
+from src.models import (
     WhatsAppWebhookPayload,
     BaseGroup,
     BaseSender,
@@ -12,8 +12,9 @@ from models import (
     BaseMessage,
     upsert,
 )
-from whatsapp.jid import normalize_jid
-from whatsapp import WhatsAppClient, SendMessageRequest
+from src.whatsapp.jid import normalize_jid
+from src.whatsapp.client import WhatsAppClient
+from src.whatsapp.models import SendMessageRequest
 
 logger = logging.getLogger(__name__)
 

@@ -13,9 +13,10 @@ from tenacity import (
     before_sleep_log,
 )
 
-from models import Group, Message
-from utils.chat_text import chat2text
-from whatsapp import WhatsAppClient, SendMessageRequest
+from src.models import Group, Message
+from src.utils.chat_text import chat2text
+from src.whatsapp.client import WhatsAppClient
+from src.whatsapp.models import SendMessageRequest
 
 logger = logging.getLogger(__name__)
 

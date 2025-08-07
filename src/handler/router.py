@@ -8,11 +8,11 @@ from sqlmodel import desc, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
-from handler.knowledge_base_answers import KnowledgeBaseAnswers
-from models import Message
-from whatsapp.jid import parse_jid
-from utils.chat_text import chat2text
-from whatsapp import WhatsAppClient
+from src.handler.knowledge_base_answers import KnowledgeBaseAnswers
+from src.models import Message
+from src.whatsapp.jid import parse_jid
+from src.utils.chat_text import chat2text
+from src.whatsapp.client import WhatsAppClient
 from .base_handler import BaseHandler
 
 # Creating an object

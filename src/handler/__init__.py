@@ -2,23 +2,28 @@ import asyncio
 import logging
 import httpx
 import traceback
+from collections import deque
 from datetime import datetime, timezone
-from typing import Optional
+from threading import Lock
+from typing import Any, Optional
 
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
-from handler.router import Router
-from handler.whatsapp_group_link_spam import WhatsappGroupLinkSpamHandler
-from models import (
-    WhatsAppWebhookPayload,
-    Message,
-)
-from utils.phone_mapper import phone_mapper
-from whatsapp import WhatsAppClient
-from .base_handler import BaseHandler
+from src.handler.router import Router
+from src.models.message import Message
+from src.models.sender import Sender
+from src.models.webhook import WhatsAppWebhookPayload
+from src.whatsapp.client import WhatsAppClient
+from src.whatsapp.jid import JID, parse_jid
+from src.utils.phone_mapper import phone_mapper
 
 logger = logging.getLogger(__name__)
+
+# Global cache for processed message IDs across all webhook calls
+_processed_messages_cache: deque[str] = deque(maxlen=1000)
+_cache_lock = Lock()
 
 # Global bot access control
 _bot_access_enabled = False
@@ -64,146 +69,145 @@ def extract_phone_from_participant(participant):
         return None
 
 
-class MessageHandler(BaseHandler):
+class MessageHandler:
     def __init__(
         self,
         session: AsyncSession,
         whatsapp: WhatsAppClient,
         embedding_client: AsyncClient,
     ):
+        self.session = session
+        self.whatsapp = whatsapp
+        self.embedding_client = embedding_client
         self.router = Router(session, whatsapp, embedding_client)
-        self.whatsapp_group_link_spam = WhatsappGroupLinkSpamHandler(
-            session, whatsapp, embedding_client
-        )
-        self.processed_messages = set()  # Simple instance-level cache
-        super().__init__(session, whatsapp, embedding_client)
+        # Instance-level cache for additional safety
+        self.processed_messages = set()
 
-    async def __call__(self, payload: WhatsAppWebhookPayload):
-        logger.debug("=== MESSAGE HANDLER START ===")
+    async def __call__(self, payload: WhatsAppWebhookPayload) -> None:
+        """Handle incoming webhook payload."""
+        logger.info("=== MESSAGE HANDLER START ===")
         
         try:
-            # Check for duplicate message processing
-            if payload.message and payload.message.id:
-                if payload.message.id in self.processed_messages:
-                    logger.info(f"Message {payload.message.id} already processed, skipping")
-                    return
-                self.processed_messages.add(payload.message.id)
-                # Keep cache size manageable (sets don't preserve order, so just clear when too large)
-                if len(self.processed_messages) > 100:
-                    self.processed_messages.clear()
-
-            # Check if message is too old (more than 5 minutes) BEFORE storing
-            message_age = datetime.now(timezone.utc) - payload.timestamp
-            if message_age.total_seconds() > 300:  # 5 minutes
-                logger.info(f"Message too old ({message_age.total_seconds():.1f}s), skipping")
+            # Extract message from payload
+            message = Message.from_webhook(payload)
+            if not message:
+                logger.info("No message found in payload, skipping")
                 return
 
-            # Store the message
-            message = await self.store_message(payload)
-            logger.debug(f"Message stored: {message is not None}")
-
-            # Handle message forwarding
-            if (
-                message
-                and message.group
-                and message.group.managed
-                and message.group.forward_url
-            ):
-                await self.forward_message(payload, message.group.forward_url)
-
-            # Early return if no message or no text
-            if not message or not message.text:
-                logger.debug("No message or no text - returning")
+            # Create unique message identifier
+            message_id = f"{message.chat_jid}_{message.message_id}_{message.timestamp}"
+            
+            # Check global cache first
+            if message_id in _processed_messages_cache:
+                logger.info(f"Message {message_id} already processed (global cache), skipping")
                 return
-
-            # Get bot's JID early for all checks
-            my_jid = await self.whatsapp.get_my_jid()
+            _processed_messages_cache.append(message_id)
             
-            # Prevent bot from responding to its own messages - CHECK THIS FIRST!
-            bot_jid_normalized = my_jid.normalize_str()
-            bot_jid_user = my_jid.user
-            logger.info(f"Checking self-message: message.sender_jid='{message.sender_jid}', bot_jid='{bot_jid_normalized}', bot_user='{bot_jid_user}'")
-            
-            # Check multiple ways the bot might identify its own messages
-            is_own_message = (
-                message.sender_jid == bot_jid_normalized or 
-                message.sender_jid == my_jid or 
-                message.sender_jid.endswith(f"@{bot_jid_user}") or
-                message.sender_jid.startswith(bot_jid_user) or
-                message.sender_jid == f"{bot_jid_user}@s.whatsapp.net" or
-                message.sender_jid == f"{bot_jid_user}@c.us"
-            )
-            
-            if is_own_message:
-                logger.info("Bot received its own message, ignoring")
+            # Check instance cache as additional safety
+            if message_id in self.processed_messages:
+                logger.info(f"Message {message_id} already processed (instance cache), skipping")
                 return
+            
+            self.processed_messages.add(message_id)
+            
+            # Clear instance cache if it gets too large
+            if len(self.processed_messages) > 100:
+                self.processed_messages.clear()
 
-            # Check if message is too old (more than 5 minutes)
+            # Check message age (skip messages older than 5 minutes)
             message_age = datetime.now(timezone.utc) - message.timestamp
-            if message_age.total_seconds() > 300:  # 5 minutes
-                logger.info(f"Message too old ({message_age.total_seconds():.1f}s), skipping")
+            if message_age.total_seconds() > 300:
+                logger.info(f"Message {message_id} is too old ({message_age.total_seconds():.1f}s), skipping")
                 return
 
-            # Check if this is a reply to a bot message (prevent bot from responding to replies to its own messages)
-            if message.reply_to_id:
-                # Check if the replied message is from the bot
-                replied_message = await self.session.get(Message, message.reply_to_id)
-                if replied_message and replied_message.sender_jid == bot_jid_normalized:
-                    logger.info("Message is reply to bot's own message, skipping")
-                    return
+            logger.info(f"Processing message: {message_id}")
+            logger.info(f"Message text: {message.text}")
+            logger.info(f"Chat JID: {message.chat_jid}")
+            logger.info(f"Sender JID: {message.sender_jid}")
 
-            # Update phone database
-            await self.update_global_phone_database(message)
+            # Store message in database
+            await self._store_message(message)
 
-            # Handle @כולם mentions
-            if "@כולם" in message.text and not payload.forwarded:
-                logger.info("Found @כולם mention - tagging all participants")
-                await self.tag_all_participants(message)
+            # Check if message is from bot itself
+            if await self._is_bot_message(message.sender_jid):
+                logger.info("Message is from bot itself, skipping")
                 return
 
-            # Check if bot was mentioned
-            logger.debug("Checking if bot was mentioned...")
-            
-            mention_check = message.has_mentioned(my_jid)
-            logger.info(f"Mention check: {mention_check}, message text: '{message.text}', bot JID: {my_jid}")
-            if mention_check:
-                logger.info("Bot was mentioned! Processing command...")
-                await self._handle_bot_command(message)
-                logger.info("Bot command processing completed")
-            else:
-                logger.debug("Bot was not mentioned")
-
-            logger.debug("=== MESSAGE HANDLER END ===")
+            # Handle bot commands
+            await self._handle_bot_command(message)
 
         except Exception as e:
-            logger.error(f"Error in message handler: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error in message handler: {e}", exc_info=True)
+        finally:
+            logger.info("=== MESSAGE HANDLER END ===")
 
-    async def _handle_bot_command(self, message: Message):
-        """Handle bot commands with simplified logic"""
-        global _bot_access_enabled
+    async def _is_bot_message(self, sender_jid: str) -> bool:
+        """Check if message is from the bot itself."""
+        try:
+            my_jid = await self.whatsapp.get_my_jid()
+            bot_jids = [
+                str(my_jid),
+                my_jid.normalize_str(),
+                f"{my_jid.user}@s.whatsapp.net",
+                f"{my_jid.user}@c.us",
+            ]
+            return sender_jid in bot_jids
+        except Exception as e:
+            logger.error(f"Error checking if message is from bot: {e}")
+            return False
 
-        logger.info(f"Handling bot command from {message.sender_jid}: '{message.text}'")
+    async def _store_message(self, message: Message) -> None:
+        """Store message in database."""
+        try:
+            # Check if message already exists
+            existing_message = await self.session.get(Message, message.message_id)
+            
+            if existing_message:
+                logger.info(f"Message {message.message_id} already exists in database")
+                return
 
-        # Admin command
-        if message.sender_jid.startswith("972532741041") and message.text and "allow" in message.text.lower():
-            _bot_access_enabled = not _bot_access_enabled
-            status = "מופעל" if _bot_access_enabled else "מושבתת"
-            await self.send_message(message.chat_jid, f"*מצב גישה:* {status}", message.message_id)
-            logger.info(f"Bot access toggled to: {status}")
-            return
+            # Store sender if not exists
+            sender = await self.session.get(Sender, message.sender_jid)
+            
+            if not sender:
+                sender = Sender(jid=message.sender_jid)
+                self.session.add(sender)
+                await self.session.commit()
+                await self.session.refresh(sender)
 
-        # Check access permissions
-        is_admin = message.sender_jid.startswith("972532741041")
-        if not (_bot_access_enabled or is_admin):
-            await self.send_message(message.chat_jid, "הלו גברתי אדוני, רק המק״ס יכול לדבר איתי", message.message_id)
-            logger.info("Access denied - bot disabled and user not admin")
-            return
+            # Store message
+            self.session.add(message)
+            await self.session.commit()
+            logger.info(f"Stored message {message.message_id} in database")
+            
+        except Exception as e:
+            logger.error(f"Error storing message: {e}", exc_info=True)
+            await self.session.rollback()
 
-        # Route to appropriate handler using Router's __call__ method
-        logger.info("Routing message to appropriate handler")
-        await self.router(message)  # This calls Router.__call__(message)
-        logger.info("Bot command routing completed")
+    async def _handle_bot_command(self, message: Message) -> None:
+        """Handle bot commands and mentions."""
+        logger.info("=== HANDLE BOT COMMAND START ===")
+        
+        try:
+            # Check if bot is mentioned
+            my_jid = await self.whatsapp.get_my_jid()
+            is_mentioned = message.has_mentioned(my_jid)
+            
+            logger.info(f"Bot mentioned: {is_mentioned}")
+            logger.info(f"Message text: {message.text}")
+            logger.info(f"Bot JID: {my_jid}")
+            
+            if is_mentioned:
+                logger.info("Bot is mentioned, routing to handler")
+                await self.router(message)
+                logger.info("Handler completed successfully")
+            else:
+                logger.info("Bot not mentioned, skipping")
+                
+        except Exception as e:
+            logger.error(f"Error in bot command handler: {e}", exc_info=True)
+        finally:
+            logger.info("=== HANDLE BOT COMMAND END ===")
 
     async def update_global_phone_database(self, message: Message):
         """Update the global phone number database when messages come in"""
@@ -321,6 +325,19 @@ class MessageHandler(BaseHandler):
         
         # Fallback
         await self.send_message(message.chat_jid, "📢 כולם מוזמנים!", message.message_id)
+
+    async def send_message(self, to_jid: str, message: str, in_reply_to: str | None = None):
+        """Send a message to a JID over WhatsApp"""
+        from src.whatsapp.models import SendMessageRequest
+        
+        resp = await self.whatsapp.send_message(
+            SendMessageRequest(
+                phone=to_jid,
+                message=message,
+                reply_message_id=in_reply_to,
+            )
+        )
+        return resp
 
     async def forward_message(
         self, payload: WhatsAppWebhookPayload, forward_url: str

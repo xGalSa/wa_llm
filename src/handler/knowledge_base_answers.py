@@ -11,10 +11,10 @@ from tenacity import (
     before_sleep_log,
 )
 
-from models import Message, KBTopic
-from whatsapp.jid import parse_jid
-from utils.chat_text import chat2text
-from utils.voyage_embed_text import voyage_embed_text
+from src.models import Message, KBTopic
+from src.whatsapp.jid import parse_jid
+from src.utils.chat_text import chat2text
+from src.utils.voyage_embed_text import voyage_embed_text
 from .base_handler import BaseHandler
 
 # Creating an object

@@ -8,10 +8,10 @@ from pydantic_ai.agent import AgentRunResult
 from voyageai.api_resources.response import VoyageResponse
 from voyageai.object.embeddings import EmbeddingsObject
 
-from handler.router import Router, IntentEnum
-from models import Message
-from test_utils.mock_session import AsyncSessionMock, mock_session  # noqa
-from whatsapp import SendMessageRequest
+from src.handler.router import Router, IntentEnum
+from src.models import Message
+from src.test_utils.mock_session import AsyncSessionMock, mock_session  # noqa
+from src.whatsapp.models import SendMessageRequest
 
 
 @pytest.fixture

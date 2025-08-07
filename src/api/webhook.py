@@ -3,9 +3,9 @@ import logging
 
 from fastapi import APIRouter, Depends
 
-from api.deps import get_handler
-from handler import MessageHandler
-from models.webhook import WhatsAppWebhookPayload
+from src.api.deps import get_handler
+from src.handler import MessageHandler
+from src.models.webhook import WhatsAppWebhookPayload
 
 # Create router for webhook endpoints
 router = APIRouter(tags=["webhook"])
