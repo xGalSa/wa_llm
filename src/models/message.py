@@ -93,7 +93,7 @@ class Message(BaseMessage, table=True):
         else:
             sender_jid = chat_jid = payload.from_
 
-        return cls(
+        msg = cls(
             **BaseMessage(
                 message_id=payload.message.id,
                 text=cls._extract_message_text(payload),
@@ -104,6 +104,12 @@ class Message(BaseMessage, table=True):
                 media_url=cls._extract_media_url(payload),
             ).model_dump()
         )
+        # Minimal construction log helpful for correlation; avoid printing full text
+        import logging as _logging
+        _logging.getLogger(__name__).info(
+            f"from_webhook built msg_id={msg.message_id} chat={msg.chat_jid} sender={msg.sender_jid} text_len={(len(msg.text) if msg.text else 0)}"
+        )
+        return msg
 
     @staticmethod
     def _extract_media_url(payload: WhatsAppWebhookPayload) -> Optional[str]:

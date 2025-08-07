@@ -93,7 +93,7 @@ class Router(BaseHandler):
     async def _route(self, message: str) -> IntentEnum:
         """Route message to appropriate handler based on content"""
         message_lower = message.lower()
-        logger.info(f"Routing message: '{message}' (lower: '{message_lower}')")
+        logger.info(f"route msg_preview='{message[:60]}'")
         
         # Check for summarize intent
         if any(phrase in message_lower for phrase in ["סיכום יומי", "daily summary", "summarize", "סיכום"]):
@@ -121,9 +121,9 @@ class Router(BaseHandler):
 
     async def __call__(self, message: Message):
         """Route message to appropriate handler"""
-        logger.info(f"Router.__call__ called with message from {message.sender_jid}")
-        logger.info(f"Router message text: '{message.text}'")
-        logger.info(f"Router message chat JID: {message.chat_jid}")
+        logger.info(
+            f"router sender={message.sender_jid} chat={message.chat_jid} text_len={(len(message.text) if message.text else 0)}"
+        )
         
         # Ensure message.text is not None before routing
         if message.text is None:
@@ -131,36 +131,36 @@ class Router(BaseHandler):
             return
             
         route = await self._route(message.text)
-        logger.info(f"Router determined intent: {route}")
+        logger.info(f"router intent={route}")
         
         match route:
             case IntentEnum.summarize:
-                logger.info("Calling summarize handler")
+                logger.info("router -> summarize")
                 await self.summarize(message)
                 logger.info("Summarize handler completed")
             case IntentEnum.ask_question:
-                logger.info("Calling ask_knowledge_base handler")
+                logger.info("router -> ask_knowledge_base")
                 await self.ask_knowledge_base(message)
                 logger.info("Knowledge base handler completed")
             case IntentEnum.about:
-                logger.info("Calling about handler")
+                logger.info("router -> about")
                 await self.about(message)
                 logger.info("About handler completed")
             case IntentEnum.tag_all:
-                logger.info("Calling tag_all_participants handler")
+                logger.info("router -> tag_all_participants")
                 await self.tag_all_participants(message)
                 logger.info("Tag all participants handler completed")
             case IntentEnum.task:
-                logger.info("Calling task handler")
+                logger.info("router -> task")
                 await self.task(message)
                 logger.info("Task handler completed")
             case IntentEnum.other:
-                logger.info("Calling default_response handler")
+                logger.info("router -> default_response")
                 await self.default_response(message)
                 logger.info("Default response handler completed")
 
     async def summarize(self, message: Message):
-        logger.info("=== SUMMARIZE METHOD START ===")
+        logger.info("summarize start")
         today_start = datetime.combine(date.today(), datetime.min.time())
         my_jid = await self.whatsapp.get_my_jid()
         stmt = (
@@ -218,7 +218,7 @@ class Router(BaseHandler):
             logger.info(f"Tokens used: {response.usage}")
 
         response_text = response.output
-        logger.info(f"Sending summary response (length: {len(response_text)} characters)")
+        logger.info(f"summarize sending len={len(response_text)}")
         
         # Check if response is too long (WhatsApp has a limit of ~4096 characters)
         if len(response_text) > 4000:
@@ -230,7 +230,7 @@ class Router(BaseHandler):
             response_text,
             message.message_id,
         )
-        logger.info("=== SUMMARIZE METHOD END ===")
+        logger.info("summarize end")
 
     async def about(self, message):
         await self.send_message(
@@ -240,7 +240,7 @@ class Router(BaseHandler):
         )
 
     async def task(self, message: Message):
-        logger.info("=== TASK METHOD START ===")
+        logger.info("task start")
         try:
             text = message.text or ""
             title = _parse_task(text)
@@ -271,17 +271,17 @@ class Router(BaseHandler):
 
             response = f"נוספה משימה: {created.get('title')}"
             await self.send_message(message.chat_jid, response, message.message_id)
-            logger.info("Task created successfully")
+            logger.info("task created")
 
         except Exception as e:
-            logger.exception(f"Failed to create Google Task: {e}")
+            logger.exception(f"task failed: {e}")
             await self.send_message(
                 message.chat_jid,
                 "לא הצלחתי ליצור משימה כרגע. ודא שהטוקן תקין ונסה שוב.",
                 message.message_id,
             )
         finally:
-            logger.info("=== TASK METHOD END ===")
+            logger.info("task end")
 
     async def default_response(self, message):
         await self.send_message(
@@ -342,7 +342,7 @@ class Router(BaseHandler):
                 
                 # Send either the tagged message or fallback
                 response_text = tagged_message.strip() or "כולם מוזמנים! 🎉"
-                logger.info(f"Sending response: '{response_text}'")
+                logger.info(f"tag_all sending len={len(response_text)}")
                 await self.send_message(message.chat_jid, response_text, message.message_id)
                 return
             else:

@@ -60,54 +60,52 @@ class MessageHandler:
 
     async def __call__(self, payload: WhatsAppWebhookPayload) -> None:
         """Handle incoming webhook payload."""
-        logger.info("=== MESSAGE HANDLER START ===")
-        logger.info(f"Payload from: {payload.from_}")
-        logger.info(f"Payload timestamp: {payload.timestamp}")
-        logger.info(f"Payload has message: {payload.message is not None}")
-        logger.info(f"Payload has reaction: {payload.reaction is not None}")
+        logger.info(
+            f"handler start from={payload.from_} msg_id={(payload.message.id if payload.message else '<none>')} ts={payload.timestamp} has_msg={bool(payload.message)} has_reaction={bool(payload.reaction)}"
+        )
         
         try:
             # Extract message from payload
             message = Message.from_webhook(payload)
             if not message:
-                logger.info("No message found in payload, skipping")
+                logger.info("handler no message after parse, skip")
                 return
 
             # Create unique message identifier using WhatsApp's message ID and sender
             message_id = f"{message.chat_jid}_{message.message_id}_{message.sender_jid}"
 
-            logger.info(f"Processing message: {message_id}")
-            logger.info(f"Message text: {message.text}")
-            logger.info(f"Chat JID: {message.chat_jid}")
-            logger.info(f"Sender JID: {message.sender_jid}")
-            logger.info(f"Message timestamp: {message.timestamp}")
+            logger.info(
+                f"handler msg id={message_id} chat={message.chat_jid} sender={message.sender_jid} text_len={(len(message.text) if message.text else 0)} ts={message.timestamp}"
+            )
 
             # Skip storing and handling for messages without text unless they include special commands or mentions
             if message.text is None or message.text.strip() == "":
-                logger.info("Empty/no-text message; skipping processing")
+                logger.info("handler empty text, skip")
                 return
 
             # Store message in database; only continue if this is the first time we see it
             is_new_message = await self._store_message(message)
-            logger.info(f"Message stored in database (is_new={is_new_message})")
+            logger.info(
+                f"handler stored is_new={is_new_message} key={message.message_id}"
+            )
             if not is_new_message:
-                logger.info("Duplicate webhook for existing message; skipping handling")
+                logger.info("handler duplicate detected, skip routing")
                 return
 
             # Check if message is from bot itself
             if await self._is_bot_message(message.sender_jid):
-                logger.info("Message is from bot itself, skipping")
+                logger.info("handler message from self, skip")
                 return
 
             # Handle bot commands
-            logger.info("About to handle bot command...")
+            logger.info("handler routing to bot command handler")
             await self._handle_bot_command(message)
-            logger.info("Bot command handling completed")
+            logger.info("handler bot command handler done")
 
         except Exception as e:
-            logger.error(f"Error in message handler: {e}", exc_info=True)
+            logger.error(f"handler error: {e}", exc_info=True)
         finally:
-            logger.info("=== MESSAGE HANDLER END ===")
+            logger.info("handler end")
 
     async def _is_bot_message(self, sender_jid: str) -> bool:
         """Check if message is from the bot itself."""
@@ -120,8 +118,9 @@ class MessageHandler:
                 f"{my_jid.user}@c.us",
             ]
             is_bot = sender_jid in bot_jids
-            logger.info(f"Bot message check: sender={sender_jid}, my_jid={my_jid}, is_bot={is_bot}")
-            logger.info(f"Bot JIDs checked: {bot_jids}")
+            logger.info(
+                f"handler is_bot_check sender={sender_jid} my={my_jid} is_bot={is_bot}"
+            )
             return is_bot
         except Exception as e:
             logger.error(f"Error checking if message is from bot: {e}")
@@ -135,13 +134,13 @@ class MessageHandler:
         try:
             # Do not store messages without text to avoid DB noise
             if not message.text or message.text.strip() == "":
-                logger.info("Skipping store: message has no text")
+                logger.info("handler skip store: empty text")
                 return False
             # Check if message already exists
             existing_message = await self.session.get(Message, message.message_id)
             
             if existing_message:
-                logger.info(f"Message {message.message_id} already exists in database")
+                logger.info(f"handler already exists id={message.message_id}")
                 return False
 
             # Store sender if not exists
@@ -156,17 +155,17 @@ class MessageHandler:
             # Store message
             self.session.add(message)
             await self.session.commit()
-            logger.info(f"Stored message {message.message_id} in database")
+            logger.info(f"handler stored id={message.message_id}")
             return True
             
         except Exception as e:
-            logger.error(f"Error storing message: {e}", exc_info=True)
+            logger.error(f"handler store error: {e}", exc_info=True)
             await self.session.rollback()
             return False
 
     async def _handle_bot_command(self, message: Message) -> None:
         """Handle bot commands and mentions."""
-        logger.info("=== HANDLE BOT COMMAND START ===")
+        logger.info("handler bot_command start")
         
         try:
             # Check if bot is mentioned
@@ -179,25 +178,21 @@ class MessageHandler:
                 special_commands = ["@כולם", "@everyone"]
                 is_special_command = any(cmd in message.text for cmd in special_commands)
             
-            logger.info(f"Bot mentioned: {is_mentioned}")
-            logger.info(f"Special command detected: {is_special_command}")
-            logger.info(f"Message text: {message.text}")
-            logger.info(f"Bot JID: {my_jid}")
-            logger.info(f"Message sender JID: {message.sender_jid}")
-            logger.info(f"Message chat JID: {message.chat_jid}")
+            logger.info(
+                f"handler bot_command mentioned={is_mentioned} special={is_special_command} bot={my_jid} sender={message.sender_jid} chat={message.chat_jid}"
+            )
             
             if is_mentioned or is_special_command:
-                logger.info("Bot is mentioned or special command detected, routing to handler")
-                logger.info("About to call router...")
+                logger.info("handler bot_command -> router")
                 await self.router(message)
-                logger.info("Router completed successfully")
+                logger.info("handler bot_command router done")
             else:
-                logger.info("Bot not mentioned and no special command, skipping")
+                logger.info("handler bot_command not mentioned and no special, skip")
                 
         except Exception as e:
-            logger.error(f"Error in bot command handler: {e}", exc_info=True)
+            logger.error(f"handler bot_command error: {e}", exc_info=True)
         finally:
-            logger.info("=== HANDLE BOT COMMAND END ===")
+            logger.info("handler bot_command end")
 
     async def forward_message(
         self, payload: WhatsAppWebhookPayload, forward_url: str

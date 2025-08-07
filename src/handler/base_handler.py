@@ -88,11 +88,9 @@ class BaseHandler:
         :param in_reply_to: The JID of the message to reply to [Optional]
         :return: The stored message
         """
-        logger.info(f"=== SEND MESSAGE START ===")
-        logger.info(f"Sending message to: {to_jid}")
-        logger.info(f"Message length: {len(message)} characters")
-        logger.info(f"Reply to message ID: {in_reply_to}")
-        logger.info(f"Message preview: {message[:100]}...")
+        logger.info(
+            f"send_message to={to_jid} len={len(message)} reply_to={in_reply_to} preview='{message[:80]}'"
+        )
         
         assert to_jid, "to_jid is required"
         assert message, "message is required"
@@ -109,7 +107,7 @@ class BaseHandler:
         if resp.results is None:
             raise RuntimeError("WhatsApp API returned no results")
         
-        logger.info(f"WhatsApp API response message ID: {resp.results.message_id}")
+        logger.info(f"send_message api_msg_id={resp.results.message_id}")
         
         my_number = await self.whatsapp.get_my_jid()
         new_message = BaseMessage(
@@ -123,8 +121,7 @@ class BaseHandler:
         if stored_message is None:
             raise RuntimeError("Failed to store message in database")
         
-        logger.info(f"Message stored in database with ID: {stored_message.message_id}")
-        logger.info("=== SEND MESSAGE END ===")
+        logger.info(f"send_message stored id={stored_message.message_id}")
         
         return stored_message
 

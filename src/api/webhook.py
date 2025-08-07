@@ -24,18 +24,19 @@ async def webhook(
     logger = logging.getLogger(__name__)
     
     try:
-        logger.info(f"=== WEBHOOK RECEIVED ===")
-        logger.info(f"From: {payload.from_}")
-        logger.info(f"Message text: {payload.message.text if payload.message else 'No message'}")
-        logger.info(f"Timestamp: {payload.timestamp}")
+        msg_id = payload.message.id if payload.message else "<none>"
+        text = payload.message.text if payload.message and payload.message.text else ""
+        logger.info(
+            f"webhook received from={payload.from_} msg_id={msg_id} ts={payload.timestamp} text_len={len(text)}"
+        )
         
         # Only process messages that have a sender (from_ field)
         if payload.from_:
-            logger.info("Calling handler...")
+            logger.info("webhook dispatching to handler")
             await handler(payload)
-            logger.info("=== HANDLER COMPLETED ===")
+            logger.info("webhook handler completed")
         else:
-            logger.info("No sender (from_ field), skipping processing")
+            logger.info("webhook missing from_, skipping")
             
         return "ok"
     except Exception as e:
