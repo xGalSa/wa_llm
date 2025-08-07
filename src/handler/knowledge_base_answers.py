@@ -23,10 +23,14 @@ logger = logging.getLogger(__name__)
 
 class KnowledgeBaseAnswers(BaseHandler):
     async def __call__(self, message: Message):
+        logger.info("=== KNOWLEDGE BASE ANSWERS START ===")
+        logger.info(f"Knowledge base processing message from: {message.sender_jid}")
+        logger.info(f"Knowledge base message text: '{message.text}'")
+        logger.info(f"Knowledge base chat JID: {message.chat_jid}")
+        
         # Ensure message.text is not None before passing to generation_agent
         if message.text is None:
-            # Remove sender logging for privacy
-            # logger.warning(f"Received message with no text from {message.sender_jid}")
+            logger.warning("Received message with no text, skipping knowledge base processing")
             return
         # get the last 7 messages
         stmt = (
@@ -102,11 +106,18 @@ class KnowledgeBaseAnswers(BaseHandler):
         #     f"Generated Response: {generation_response.output}"
         # )
 
+        logger.info(f"About to send knowledge base response to {message.chat_jid}")
+        logger.info(f"Response length: {len(generation_response.output)} characters")
+        logger.info(f"Response preview: {generation_response.output[:100]}...")
+        
         await self.send_message(
             message.chat_jid,
             generation_response.output,
             message.message_id,
         )
+        
+        logger.info("Knowledge base response sent successfully")
+        logger.info("=== KNOWLEDGE BASE ANSWERS END ===")
 
     @retry(
         wait=wait_random_exponential(min=1, max=30),

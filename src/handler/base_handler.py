@@ -73,7 +73,10 @@ class BaseHandler:
                     await self.session.flush()
 
             # Finally add the message
-            return await self.upsert(message)
+            stored_message = await self.upsert(message)
+            if isinstance(stored_message, Message):
+                return stored_message
+            return None
 
     async def send_message(
         self, to_jid: str, message: str, in_reply_to: str | None = None
@@ -85,6 +88,12 @@ class BaseHandler:
         :param in_reply_to: The JID of the message to reply to [Optional]
         :return: The stored message
         """
+        logger.info(f"=== SEND MESSAGE START ===")
+        logger.info(f"Sending message to: {to_jid}")
+        logger.info(f"Message length: {len(message)} characters")
+        logger.info(f"Reply to message ID: {in_reply_to}")
+        logger.info(f"Message preview: {message[:100]}...")
+        
         assert to_jid, "to_jid is required"
         assert message, "message is required"
         to_jid = normalize_jid(to_jid)
@@ -98,14 +107,28 @@ class BaseHandler:
                 reply_message_id=in_reply_to,
             )
         )
+        
+        if resp.results is None:
+            raise RuntimeError("WhatsApp API returned no results")
+        
+        logger.info(f"WhatsApp API response message ID: {resp.results.message_id}")
+        
         my_number = await self.whatsapp.get_my_jid()
         new_message = BaseMessage(
             message_id=resp.results.message_id,
             text=message,
-            sender_jid=my_number,
+            sender_jid=str(my_number),
             chat_jid=to_jid,
         )
-        return await self.store_message(Message(**new_message.model_dump()))
+        
+        stored_message = await self.store_message(Message(**new_message.model_dump()))
+        if stored_message is None:
+            raise RuntimeError("Failed to store message in database")
+        
+        logger.info(f"Message stored in database with ID: {stored_message.message_id}")
+        logger.info("=== SEND MESSAGE END ===")
+        
+        return stored_message
 
     async def upsert(self, model):
         return await upsert(self.session, model)

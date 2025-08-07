@@ -66,6 +66,8 @@ class Router(BaseHandler):
     async def __call__(self, message: Message):
         """Route message to appropriate handler"""
         logger.info(f"Router.__call__ called with message from {message.sender_jid}")
+        logger.info(f"Router message text: '{message.text}'")
+        logger.info(f"Router message chat JID: {message.chat_jid}")
         
         # Ensure message.text is not None before routing
         if message.text is None:
@@ -73,6 +75,7 @@ class Router(BaseHandler):
             return
             
         route = await self._route(message.text)
+        logger.info(f"Router determined intent: {route}")
         
         match route:
             case IntentEnum.summarize:

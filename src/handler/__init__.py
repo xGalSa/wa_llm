@@ -85,6 +85,10 @@ class MessageHandler:
     async def __call__(self, payload: WhatsAppWebhookPayload) -> None:
         """Handle incoming webhook payload."""
         logger.info("=== MESSAGE HANDLER START ===")
+        logger.info(f"Payload from: {payload.from_}")
+        logger.info(f"Payload timestamp: {payload.timestamp}")
+        logger.info(f"Payload has message: {payload.message is not None}")
+        logger.info(f"Payload has reaction: {payload.reaction is not None}")
         
         try:
             # Extract message from payload
@@ -95,12 +99,14 @@ class MessageHandler:
 
             # Create unique message identifier
             message_id = f"{message.chat_jid}_{message.message_id}_{message.timestamp}"
+            logger.info(f"Generated message ID: {message_id}")
             
             # Check global cache first
             if message_id in _processed_messages_cache:
                 logger.info(f"Message {message_id} already processed (global cache), skipping")
                 return
             _processed_messages_cache.append(message_id)
+            logger.info(f"Added to global cache. Cache size: {len(_processed_messages_cache)}")
             
             # Check instance cache as additional safety
             if message_id in self.processed_messages:
@@ -108,9 +114,11 @@ class MessageHandler:
                 return
             
             self.processed_messages.add(message_id)
+            logger.info(f"Added to instance cache. Instance cache size: {len(self.processed_messages)}")
             
             # Clear instance cache if it gets too large
             if len(self.processed_messages) > 100:
+                logger.info("Clearing instance cache (too large)")
                 self.processed_messages.clear()
 
             # Check message age (skip messages older than 5 minutes)
@@ -123,6 +131,7 @@ class MessageHandler:
             logger.info(f"Message text: {message.text}")
             logger.info(f"Chat JID: {message.chat_jid}")
             logger.info(f"Sender JID: {message.sender_jid}")
+            logger.info(f"Message timestamp: {message.timestamp}")
 
             # Store message in database
             await self._store_message(message)
@@ -133,7 +142,9 @@ class MessageHandler:
                 return
 
             # Handle bot commands
+            logger.info("About to handle bot command...")
             await self._handle_bot_command(message)
+            logger.info("Bot command handling completed")
 
         except Exception as e:
             logger.error(f"Error in message handler: {e}", exc_info=True)
@@ -195,11 +206,14 @@ class MessageHandler:
             logger.info(f"Bot mentioned: {is_mentioned}")
             logger.info(f"Message text: {message.text}")
             logger.info(f"Bot JID: {my_jid}")
+            logger.info(f"Message sender JID: {message.sender_jid}")
+            logger.info(f"Message chat JID: {message.chat_jid}")
             
             if is_mentioned:
                 logger.info("Bot is mentioned, routing to handler")
+                logger.info("About to call router...")
                 await self.router(message)
-                logger.info("Handler completed successfully")
+                logger.info("Router completed successfully")
             else:
                 logger.info("Bot not mentioned, skipping")
                 
