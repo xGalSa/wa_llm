@@ -90,6 +90,7 @@ class MessageHandler:
 
             # Store message in database
             await self._store_message(message)
+            logger.info(f"Message stored in database")
 
             # Check if message is from bot itself
             if await self._is_bot_message(message.sender_jid):
