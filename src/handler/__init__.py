@@ -17,8 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 
-# Global bot access control
-_bot_access_enabled = False
+# Admin user who is allowed to interact with the bot
+ADMIN_USER = "972532741041"
+
+global_bot_access_enabled = False
 
 async def get_user_groups(whatsapp: WhatsAppClient):
     """Get user groups - single attempt only"""
@@ -172,6 +174,11 @@ class MessageHandler:
             my_jid = await self.whatsapp.get_my_jid()
             is_mentioned = message.has_mentioned(my_jid)
             
+            # Group-only: ignore direct messages entirely (no replies)
+            if not parse_jid(message.chat_jid).is_group():
+                logger.info("handler bot_command in DM - ignoring (group-only mode)")
+                return
+            
             # Check for special commands that should be processed even without mention
             is_special_command = False
             if message.text:
@@ -182,9 +189,23 @@ class MessageHandler:
                 f"handler bot_command mentioned={is_mentioned} special={is_special_command} bot={my_jid} sender={message.sender_jid} chat={message.chat_jid}"
             )
             
+            # Admin-only enforcement (in groups only)
+            sender_user = parse_jid(message.sender_jid).user
             if is_mentioned or is_special_command:
+                if not global_bot_access_enabled or sender_user != ADMIN_USER:
+                    logger.info("Admin-only: rejecting non-admin request")
+                    await self.router.send_message(
+                        message.chat_jid,
+                        "Sorry, I can't help you.",
+                        message.message_id,
+                    )
+
+                    return
+
                 logger.info("handler bot_command -> router")
+
                 await self.router(message)
+                
                 logger.info("handler bot_command router done")
             else:
                 logger.info("handler bot_command not mentioned and no special, skip")
