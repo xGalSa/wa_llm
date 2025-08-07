@@ -2,7 +2,7 @@ import asyncio
 import logging
 import httpx
 import traceback
-from collections import deque
+
 from datetime import datetime, timezone
 
 from typing import Any, Optional
@@ -17,38 +17,22 @@ from src.models.sender import Sender
 from src.models.webhook import WhatsAppWebhookPayload
 from src.whatsapp.client import WhatsAppClient
 from src.whatsapp.jid import JID, parse_jid
-from src.utils.phone_mapper import phone_mapper
+
 
 logger = logging.getLogger(__name__)
 
-# Global cache for processed message IDs across all webhook calls
-_processed_messages_cache: deque[str] = deque(maxlen=1000)
+
 
 # Global bot access control
 _bot_access_enabled = False
 
-
-async def get_user_groups_with_retry(whatsapp: WhatsAppClient, max_retries: int = 3):
-    """Get user groups with simple retry logic for rate limiting and server errors"""
-    for attempt in range(max_retries):
-        try:
-            return await whatsapp.get_user_groups()
-        except httpx.HTTPStatusError as exc:
-            # Retry on both 429 (rate limit) and 500 (server error)
-            if exc.response.status_code in [429, 500]:
-                wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
-                logger.warning(f"HTTP {exc.response.status_code} error (attempt {attempt + 1}/{max_retries}). Waiting {wait_time}s...")
-                await asyncio.sleep(wait_time)
-                continue
-            else:
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected error fetching groups: {e}")
-            raise
-    
-    # If we get here, all retries failed
-    logger.error("All retries failed for get_user_groups")
-    raise httpx.HTTPStatusError("Request failed after all retries", request=httpx.Request("GET", ""), response=httpx.Response(500))
+async def get_user_groups(whatsapp: WhatsAppClient):
+    """Get user groups - single attempt only"""
+    try:
+        return await whatsapp.get_user_groups()
+    except Exception as e:
+        logger.error(f"Error fetching groups: {e}")
+        raise
 
 
 def extract_phone_from_participant(participant):
@@ -60,8 +44,8 @@ def extract_phone_from_participant(participant):
             # Extract phone number from format "972585277785@s.whatsapp.net"
             return phone.split('@')[0] if '@' in phone else phone
         
-        # Fallback to phone mapper using JID
-        return phone_mapper.get_phone(participant.JID)
+        # No fallback - return None if no phone number found
+        return None
         
     except Exception as e:
         logger.warning(f"Error extracting phone from participant: {e}")
@@ -79,8 +63,6 @@ class MessageHandler:
         self.whatsapp = whatsapp
         self.embedding_client = embedding_client
         self.router = Router(session, whatsapp, embedding_client)
-        # Instance-level cache for additional safety
-        self.processed_messages = set()
 
     async def __call__(self, payload: WhatsAppWebhookPayload) -> None:
         """Handle incoming webhook payload."""
@@ -97,35 +79,8 @@ class MessageHandler:
                 logger.info("No message found in payload, skipping")
                 return
 
-            # Create unique message identifier
-            message_id = f"{message.chat_jid}_{message.message_id}_{message.timestamp}"
-            logger.info(f"Generated message ID: {message_id}")
-            
-            # Check global cache first
-            if message_id in _processed_messages_cache:
-                logger.info(f"Message {message_id} already processed (global cache), skipping")
-                return
-            _processed_messages_cache.append(message_id)
-            logger.info(f"Added to global cache. Cache size: {len(_processed_messages_cache)}")
-            
-            # Check instance cache as additional safety
-            if message_id in self.processed_messages:
-                logger.info(f"Message {message_id} already processed (instance cache), skipping")
-                return
-            
-            self.processed_messages.add(message_id)
-            logger.info(f"Added to instance cache. Instance cache size: {len(self.processed_messages)}")
-            
-            # Clear instance cache if it gets too large
-            if len(self.processed_messages) > 100:
-                logger.info("Clearing instance cache (too large)")
-                self.processed_messages.clear()
-
-            # Check message age (skip messages older than 5 minutes)
-            message_age = datetime.now(timezone.utc) - message.timestamp
-            if message_age.total_seconds() > 300:
-                logger.info(f"Message {message_id} is too old ({message_age.total_seconds():.1f}s), skipping")
-                return
+            # Create unique message identifier using WhatsApp's message ID and sender
+            message_id = f"{message.chat_jid}_{message.message_id}_{message.sender_jid}"
 
             logger.info(f"Processing message: {message_id}")
             logger.info(f"Message text: {message.text}")
@@ -161,9 +116,13 @@ class MessageHandler:
                 f"{my_jid.user}@s.whatsapp.net",
                 f"{my_jid.user}@c.us",
             ]
-            return sender_jid in bot_jids
+            is_bot = sender_jid in bot_jids
+            logger.info(f"Bot message check: sender={sender_jid}, my_jid={my_jid}, is_bot={is_bot}")
+            logger.info(f"Bot JIDs checked: {bot_jids}")
+            return is_bot
         except Exception as e:
             logger.error(f"Error checking if message is from bot: {e}")
+            # If we can't determine, assume it's not from bot to be safe
             return False
 
     async def _store_message(self, message: Message) -> None:
@@ -222,53 +181,7 @@ class MessageHandler:
         finally:
             logger.info("=== HANDLE BOT COMMAND END ===")
 
-    async def update_global_phone_database(self, message: Message):
-        """Update the global phone number database when messages come in"""
-        try:
-            if message.sender_jid and '@' in message.sender_jid:
-                phone = message.sender_jid.split('@')[0]
-                jid = message.sender_jid
-                
-                # Store JID -> phone mapping
-                phone_mapper.add_jid_mapping(jid, phone)
-                
-                # Also analyze all groups to find LID mappings for this phone
-                await self.analyze_groups_for_lid_mappings(phone, jid)
-                
-        except Exception as e:
-            logger.error(f"Error updating global phone database: {e}")
 
-    async def analyze_groups_for_lid_mappings(self, phone: str, jid: str):
-        """Analyze all groups to find LID mappings for a known phone number"""
-        try:
-            # Get all groups with retry logic
-            groups_response = await get_user_groups_with_retry(self.whatsapp)
-            
-            if not groups_response.results or not groups_response.results.data:
-                return
-                
-            for group in groups_response.results.data:
-                for participant in group.Participants:
-                    # If this participant has the same phone in their JID, 
-                    # but appears as LID in this group, create the mapping
-                    if participant.JID.endswith('@lid'):
-                        # We can't directly match, but we can build mappings over time
-                        # This is a limitation - we need other logic to connect LIDs to phones
-                        pass
-                    elif participant.JID == jid:
-                        # This person appears with phone JID in this group
-                        # Look for other groups where they might appear as LID
-                        pass
-                        
-        except Exception as e:
-            logger.error(f"Error analyzing groups for LID mappings: {e}")
-
-    async def find_lid_for_phone_across_groups(self, phone: str, jid: str):
-        """Try to find LID representations of this phone across groups"""
-        # This is complex because we can't directly match LID to phone
-        # We would need additional logic or data to make this connection
-        # For now, let's focus on building mappings from known data
-        pass
 
     async def tag_all_participants(self, message: Message):
         """Tag all participants in the group when @כולם is mentioned"""
@@ -278,8 +191,8 @@ class MessageHandler:
             bot_phone = my_jid.user
             logger.info(f"Bot phone: {bot_phone}")
             
-            # Get all groups with retry logic for rate limiting
-            groups_response = await get_user_groups_with_retry(self.whatsapp)
+            # Get all groups - single attempt only
+            groups_response = await get_user_groups(self.whatsapp)
             
             # Add null check for results
             if not groups_response.results or not groups_response.results.data:
@@ -312,16 +225,9 @@ class MessageHandler:
                 
                 logger.info(f"Tagged message so far: '{tagged_message}'")
                 
-                # If no phone numbers found, use all known phones from other groups
+                # If no phone numbers found, just use the fallback message
                 if not tagged_message.strip():
-                    logger.info("No participants tagged, checking all known phones")
-                    all_phones = phone_mapper.get_all_phones()
-                    logger.info(f"All known phones: {all_phones}")
-                    
-                    for phone in all_phones:
-                        if phone != bot_phone:
-                            tagged_message += f"@{phone} "
-                            logger.info(f"Added from known phones: @{phone}")
+                    logger.info("No participants tagged, will use fallback message")
                 
                 logger.info(f"Final tagged message: '{tagged_message}'")
                 

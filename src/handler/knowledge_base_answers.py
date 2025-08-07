@@ -4,12 +4,7 @@ from typing import List
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunResult
 from sqlmodel import select, cast, String, desc
-from tenacity import (
-    retry,
-    wait_random_exponential,
-    stop_after_attempt,
-    before_sleep_log,
-)
+
 
 from src.models import Message, KBTopic
 from src.whatsapp.jid import parse_jid
@@ -119,12 +114,6 @@ class KnowledgeBaseAnswers(BaseHandler):
         logger.info("Knowledge base response sent successfully")
         logger.info("=== KNOWLEDGE BASE ANSWERS END ===")
 
-    @retry(
-        wait=wait_random_exponential(min=1, max=30),
-        stop=stop_after_attempt(6),
-        before_sleep=before_sleep_log(logger, logging.DEBUG),
-        reraise=True,
-    )
     async def generation_agent(
         self, query: str, topics: list[str], sender: str, history: List[Message]
     ) -> AgentRunResult[str]:
@@ -157,12 +146,6 @@ class KnowledgeBaseAnswers(BaseHandler):
 
         return await agent.run(prompt_template)
 
-    @retry(
-        wait=wait_random_exponential(min=1, max=30),
-        stop=stop_after_attempt(6),
-        before_sleep=before_sleep_log(logger, logging.DEBUG),
-        reraise=True,
-    )
     async def rephrasing_agent(
         self, my_jid: str, message: Message, history: List[Message]
     ) -> AgentRunResult[str]:
