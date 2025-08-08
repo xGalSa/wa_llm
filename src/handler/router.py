@@ -21,6 +21,10 @@ from .base_handler import BaseHandler
 # Creating an object
 logger = logging.getLogger(__name__)
 
+# Bound context upstream in SQL to minimize fetch size
+max_messages_for_context = 200
+max_history_chars = 12000  # ~3k tokens approximation (4 chars/token)
+
 # Google Tasks integration helpers
 SCOPES = ["https://www.googleapis.com/auth/tasks"]
 
@@ -187,10 +191,6 @@ class Router(BaseHandler):
         logger.info("summarize start")
         today_start = datetime.combine(date.today(), datetime.min.time())
         my_jid = await self.whatsapp.get_my_jid()
-
-        # Bound context upstream in SQL to minimize fetch size
-        max_messages_for_context = 200
-        max_history_chars = 12000  # ~3k tokens approximation (4 chars/token)
 
         stmt = (
             select(Message)
