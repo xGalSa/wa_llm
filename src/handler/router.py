@@ -187,21 +187,26 @@ class Router(BaseHandler):
         logger.info("summarize start")
         today_start = datetime.combine(date.today(), datetime.min.time())
         my_jid = await self.whatsapp.get_my_jid()
+
+        # Bound context upstream in SQL to minimize fetch size
+        max_messages_for_context = 200
+        max_history_chars = 12000  # ~3k tokens approximation (4 chars/token)
+
         stmt = (
             select(Message)
-            .where(Message.chat_jid == message.chat_jid) # From the same group
-            .where(Message.timestamp >= today_start) # From today
+            .where(Message.chat_jid == message.chat_jid)  # From the same group
+            .where(Message.timestamp >= today_start)  # From today
             .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
-            .order_by(desc(Message.timestamp)) # Newest to oldest
-            .limit(200)  # Capture more messages for better filtering
+            .order_by(desc(Message.timestamp))  # Newest to oldest
+            .limit(max_messages_for_context)
         )
         res = await self.session.exec(stmt)
-        messages: list[Message] = list(res.all())
+        messages_to_summarize: list[Message] = list(res.all())
 
-        if len(messages) > 50:
+        if len(messages_to_summarize) > 50:
             await self.send_message(
                 message.chat_jid,
-                f"מעבד {len(messages)} הודעות... זה יכול לקחת דקה.",
+                f"מעבד {len(messages_to_summarize)} הודעות... זה יכול לקחת דקה.",
                 message.message_id,
             )
 
@@ -233,8 +238,13 @@ class Router(BaseHandler):
             """,
         )
 
+        # Compose bounded input for the LLM
+        user_text = (message.text or "")[:2000]
+        history_text_full = chat2text(messages_to_summarize)
+        history_text = history_text_full[:max_history_chars]
+
         response = await agent.run(
-            f"@{parse_jid(message.sender_jid).user}: {message.text}\n\n # History:\n {chat2text(messages)}"
+            f"@{parse_jid(message.sender_jid).user}: {user_text}\n\n# History (truncated):\n{history_text}"
         )
 
         # If pydantic_ai provides usage info
