@@ -238,13 +238,12 @@ class Router(BaseHandler):
             """,
         )
 
-        # Compose bounded input for the LLM
-        user_text = (message.text or "")[:2000]
+        # Compose bounded input for the LLM (history only)
         history_text_full = chat2text(messages_to_summarize)
         history_text = history_text_full[:max_history_chars]
 
         response = await agent.run(
-            f"@{parse_jid(message.sender_jid).user}: {user_text}\n\n# History (truncated):\n{history_text}"
+            f"# History (truncated):\n{history_text}"
         )
 
         # If pydantic_ai provides usage info
