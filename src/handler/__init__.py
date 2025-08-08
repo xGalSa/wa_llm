@@ -209,7 +209,7 @@ class MessageHandler:
                 state = "ON (admin-only)" if not allow_participants_interactions else "OFF (everyone)"
                 await self.router.send_message(
                     message.chat_jid,
-                    f"Allowing participants to interact: {state}",
+                    f"Admin only interactions: {state}",
                     message.message_id,
                 )
                 return
