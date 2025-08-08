@@ -277,21 +277,8 @@ class Router(BaseHandler):
                 list_id,
             )
 
-            # Validate API response to ensure task was actually created
-            task_id = created.get("id")
-            logger.info(
-                "Google Task API response: id='%s' title='%s' status='%s' kind='%s'",
-                task_id,
-                created.get("title"),
-                created.get("status"),
-                created.get("kind"),
-            )
-            if not task_id:
-                raise RuntimeError(
-                    f"Google Tasks API returned no id. Raw response: {created!r}"
-                )
 
-            response = f"נוספה משימה: {created.get('title')}"
+            response = f"חדשה ל-Google Tasks משימה: {created.get('title')}"
             await self.send_message(message.chat_jid, response, message.message_id)
             logger.info("task created")
 

@@ -193,6 +193,17 @@ class MessageHandler:
             sender_user = parse_jid(message.sender_jid).user
             text_lower = (message.text or "").lower()
 
+            # Enforce: Only admin can create tasks ("משימה חדשה")
+            if message.text and "משימה חדשה" in message.text:
+                if sender_user != ADMIN_USER:
+                    logger.info("Non-admin attempted to create a task; blocking")
+                    await self.router.send_message(
+                        message.chat_jid,
+                        "רק המנהל יכול להוסיף משימות.",
+                        message.message_id,
+                    )
+                    return
+
             # Toggle admin-only enforcement when admin mentions bot with keyword "allow"
             if is_mentioned and sender_user == ADMIN_USER and "allow" in text_lower:
                 global global_bot_access_enabled
