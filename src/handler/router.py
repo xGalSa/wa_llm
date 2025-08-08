@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta, date
 from enum import Enum
+from typing import Any, Dict, Optional
 
 import os, re, json, base64, asyncio
 
@@ -54,13 +55,20 @@ def _parse_task(text: str):
     title = text[idx + len(trigger):].strip(" \t-:")
     return title or None
 
-def _create_google_task_sync(title: str, notes: str | None = None, list_id: str | None = None):
+def _create_google_task_sync(
+    title: str,
+    notes: Optional[str] = None,
+    list_id: Optional[str] = None,
+) -> Dict[str, Any]:
     svc = get_tasks_service()
-    body = {"title": title}
+    body: Dict[str, Any] = {"title": title}
     if notes:
         body["notes"] = notes
     tasklist = list_id or "@default"
-    return svc.tasks().insert(tasklist=tasklist, body=body).execute()
+    created: Dict[str, Any] = (
+        svc.tasks().insert(tasklist=tasklist, body=body).execute()
+    )
+    return created
 
 
 class IntentEnum(str, Enum):
@@ -268,6 +276,20 @@ class Router(BaseHandler):
                 notes,
                 list_id,
             )
+
+            # Validate API response to ensure task was actually created
+            task_id = created.get("id")
+            logger.info(
+                "Google Task API response: id='%s' title='%s' status='%s' kind='%s'",
+                task_id,
+                created.get("title"),
+                created.get("status"),
+                created.get("kind"),
+            )
+            if not task_id:
+                raise RuntimeError(
+                    f"Google Tasks API returned no id. Raw response: {created!r}"
+                )
 
             response = f"נוספה משימה: {created.get('title')}"
             await self.send_message(message.chat_jid, response, message.message_id)
