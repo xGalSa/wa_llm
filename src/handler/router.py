@@ -77,6 +77,7 @@ class IntentEnum(str, Enum):
     about = "about"
     tag_all = "tag_all"
     task = "task"
+    admin_only = "admin_only"
     other = "other"
 
 
@@ -98,9 +99,20 @@ class Router(BaseHandler):
         )
         super().__init__(session, whatsapp, embedding_client)
 
-    async def _route(self, message: str) -> IntentEnum:
+    async def _route(self, message: str, allow_command_execution: bool = False) -> IntentEnum:
         """Route message to appropriate handler based on content"""
         message_lower = message.lower()
+
+        # Check for tag_all intent (@כולם) - everyone can use it
+        if any(phrase in message_lower for phrase in ["@כולם", "@everyone"]):
+            logger.info("Routing to tag_all")
+            return IntentEnum.tag_all
+
+        # If enforcement is ON, only admin may proceed
+        if not allow_command_execution:
+            logger.info("Admin-only: rejecting non-admin request")
+            return IntentEnum.admin_only
+
         logger.info(f"route msg_preview='{message[:60]}'")
         
         # Check for summarize intent
@@ -108,17 +120,8 @@ class Router(BaseHandler):
             logger.info("Routing to summarize")
             return IntentEnum.summarize
             
-        # Check for about intent
-        if any(phrase in message_lower for phrase in ["about", "אודות", "מי אתה", "what are you", "help", "עזרה"]):
-            logger.info("Routing to about")
-            return IntentEnum.about
-            
-        # Check for tag_all intent (@כולם)
-        if any(phrase in message_lower for phrase in ["@כולם", "@everyone"]):
-            logger.info("Routing to tag_all")
-            return IntentEnum.tag_all
-
         # Check for task intent (trigger phrase appears anywhere)
+        # Already checked in __init__ if it's a task command and if admin only
         if "משימה חדשה" in message:
             logger.info("Routing to task")
             return IntentEnum.task
@@ -127,7 +130,7 @@ class Router(BaseHandler):
         logger.info("Routing to ask_question (default)")
         return IntentEnum.ask_question
 
-    async def __call__(self, message: Message):
+    async def __call__(self, message: Message, allow_command_execution: bool = False):
         """Route message to appropriate handler"""
         logger.info(
             f"router sender={message.sender_jid} chat={message.chat_jid} text_len={(len(message.text) if message.text else 0)}"
@@ -138,10 +141,14 @@ class Router(BaseHandler):
             logger.warning("Received message with no text, skipping routing")
             return
             
-        route = await self._route(message.text)
+        route = await self._route(message.text, allow_command_execution)
         logger.info(f"router intent={route}")
         
         match route:
+            case IntentEnum.admin_only:
+                logger.info("router -> admin_only")
+                await self.admin_only(message)
+                logger.info("Admin only handler completed")
             case IntentEnum.summarize:
                 logger.info("router -> summarize")
                 await self.summarize(message)
@@ -166,6 +173,15 @@ class Router(BaseHandler):
                 logger.info("router -> default_response")
                 await self.default_response(message)
                 logger.info("Default response handler completed")
+
+    async def admin_only(self, message: Message):
+        logger.info("admin_only start")
+        await self.send_message(
+            message.chat_jid,
+            "Sorry, only admins can use this command.",
+            message.message_id,
+        )
+        logger.info("admin_only end")
 
     async def summarize(self, message: Message):
         logger.info("summarize start")

@@ -15,12 +15,10 @@ from src.whatsapp.jid import JID, parse_jid
 
 logger = logging.getLogger(__name__)
 
-
-
 # Admin user who is allowed to interact with the bot
 ADMIN_USER = "972532741041"
 
-global_bot_access_enabled = True
+allow_participants_interactions = False
 
 async def get_user_groups(whatsapp: WhatsAppClient):
     """Get user groups - single attempt only"""
@@ -193,7 +191,7 @@ class MessageHandler:
             sender_user = parse_jid(message.sender_jid).user
             text_lower = (message.text or "").lower()
 
-            # Enforce: Only admin can create tasks ("משימה חדשה")
+            # Enforce: Only admin can create tasks ("משימה חדשה"), even if allow_participants_interactions is True
             if message.text and "משימה חדשה" in message.text:
                 if sender_user != ADMIN_USER:
                     logger.info("Non-admin attempted to create a task; blocking")
@@ -206,32 +204,24 @@ class MessageHandler:
 
             # Toggle admin-only enforcement when admin mentions bot with keyword "allow"
             if is_mentioned and sender_user == ADMIN_USER and "allow" in text_lower:
-                global global_bot_access_enabled
-                global_bot_access_enabled = not global_bot_access_enabled
-                state = "ON (admin-only)" if global_bot_access_enabled else "OFF (everyone)"
+                global allow_participants_interactions
+                allow_participants_interactions = not allow_participants_interactions
+                state = "ON (admin-only)" if not allow_participants_interactions else "OFF (everyone)"
                 await self.router.send_message(
                     message.chat_jid,
-                    f"Access enforcement is now: {state}",
+                    f"Allowing participants to interact: {state}",
                     message.message_id,
                 )
                 return
 
             if is_mentioned or is_special_command:
-                # If enforcement is ON, only admin may proceed
-                if global_bot_access_enabled and sender_user != ADMIN_USER:
-                    logger.info("Admin-only: rejecting non-admin request")
-                    await self.router.send_message(
-                        message.chat_jid,
-                        "Sorry, I can't help you.",
-                        message.message_id,
-                    )
-                    return
-
                 logger.info("handler bot_command -> router")
-                await self.router(message)
+                await self.router(message, allow_participants_interactions or sender_user == ADMIN_USER)
                 logger.info("handler bot_command router done")
-            else:
-                logger.info("handler bot_command not mentioned and no special, skip")
+                return
+
+            # If not mentioned and no special, skip
+            logger.info("handler bot_command not mentioned and no special, skip")
                 
         except Exception as e:
             logger.error(f"handler bot_command error: {e}", exc_info=True)
