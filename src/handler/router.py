@@ -278,7 +278,7 @@ class Router(BaseHandler):
             )
 
 
-            response = f"חדשה ל-Google Tasks משימה: {created.get('title')}"
+            response = f"המשימה {created.get('title')} נוספה ל-Google Tasks"
             await self.send_message(message.chat_jid, response, message.message_id)
             logger.info("task created")
 
