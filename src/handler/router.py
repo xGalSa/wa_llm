@@ -13,6 +13,8 @@ from voyageai.client_async import AsyncClient
 
 from src.handler.knowledge_base_answers import KnowledgeBaseAnswers
 from src.models import Message
+from src.models.group import Group
+from src.models.sender import Sender
 from src.whatsapp.jid import parse_jid
 from src.utils.chat_text import chat2text
 from src.whatsapp.client import WhatsAppClient
@@ -316,8 +318,18 @@ class Router(BaseHandler):
                 list_id = None
             list_id = list_id or "@default"
 
-            # Notes can include origin chat and sender for traceability
-            notes = f"From chat: {message.chat_jid}\nSender: {message.sender_jid}"
+            # Build notes using group name and sender name/phone
+            group_name: str
+            if message.group_jid:
+                grp = await self.session.get(Group, message.group_jid)
+                group_name = grp.group_name if (grp and grp.group_name) else message.chat_jid
+            else:
+                group_name = message.chat_jid
+
+            snd = await self.session.get(Sender, message.sender_jid)
+            sender_display = (snd.push_name if (snd and snd.push_name) else parse_jid(message.sender_jid).user)
+
+            notes = f"Group: {group_name}\nSender: {sender_display}"
 
             # Default due: next day at 10:00 in local timezone (Asia/Jerusalem), fallback to UTC
             try:
