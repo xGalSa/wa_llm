@@ -180,12 +180,16 @@ def _create_google_task_sync(
 ) -> Dict[str, Any]:
     svc = get_tasks_service()
     body: Dict[str, Any] = {"title": title}
+    
+    if due is not None:
+        # Try RFC 3339 format with explicit timezone as shown in Google Tasks API docs
+        # Format: 2010-08-09T10:57:00.000-08:00 or 2010-08-09T10:57:00.000Z
+        due_utc = due.astimezone(timezone.utc)
+        # Use the exact format from Google Tasks API documentation
+        body["due"] = due_utc.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
     if notes:
         body["notes"] = notes
-    if due is not None:
-        # Google Tasks expects RFC3339 timestamp in UTC, but only accepts date for due field
-        # For due time, we need to convert to UTC and use the full datetime
-        body["due"] = due.astimezone(timezone.utc).isoformat()
+        
     tasklist = list_id or "@default"
     created: Dict[str, Any] = (
         svc.tasks().insert(tasklist=tasklist, body=body).execute()
