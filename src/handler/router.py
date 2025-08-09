@@ -191,9 +191,17 @@ def _create_google_task_sync(
         body["notes"] = notes
         
     tasklist = list_id or "@default"
+    
+    # Log what we're sending to Google Tasks API
+    logger.info(f"google_tasks_request: tasklist={tasklist} body={body}")
+    
     created: Dict[str, Any] = (
         svc.tasks().insert(tasklist=tasklist, body=body).execute()
     )
+    
+    # Log what Google Tasks API returns
+    logger.info(f"google_tasks_response: {created}")
+    
     return created
 
 
