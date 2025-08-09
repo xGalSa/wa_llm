@@ -74,8 +74,8 @@ def _get_tasklist_id_by_name_sync(name: str) -> Optional[str]:
 def _parse_task(text: str):
     """
     Minimal parser: if the message contains "משימה חדשה", the task title is
-    everything that comes after it on the same line. Returns the title string,
-    or None if missing.
+    everything that comes after it on the same line, excluding date/time patterns.
+    Returns the title string, or None if missing.
     """
     if not text:
         return None
@@ -84,6 +84,15 @@ def _parse_task(text: str):
     if idx == -1:
         return None
     title = text[idx + len(trigger):].strip(" \t-:")
+    
+    # Find and remove date/time patterns, but preserve surrounding text
+    # Remove date patterns (DD.MM, DD/MM, DD.MM.YY, etc.) with surrounding whitespace
+    title = re.sub(r"\s*\b\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?\b\s*", " ", title)
+    # Remove time patterns (HH:MM) with surrounding whitespace
+    title = re.sub(r"\s*\b([01]?\d|2[0-3]):([0-5]\d)\b\s*", " ", title)
+    # Clean up extra whitespace but preserve the structure
+    title = re.sub(r"\s+", " ", title).strip()
+    
     return title or None
 
 def _parse_due_datetime(text: str, tz) -> Optional[datetime]:
@@ -174,8 +183,9 @@ def _create_google_task_sync(
     if notes:
         body["notes"] = notes
     if due is not None:
-        # Google Tasks expects RFC3339 timestamp
-        body["due"] = due.isoformat()
+        # Google Tasks expects RFC3339 timestamp in UTC, but only accepts date for due field
+        # For due time, we need to convert to UTC and use the full datetime
+        body["due"] = due.astimezone(timezone.utc).isoformat()
     tasklist = list_id or "@default"
     created: Dict[str, Any] = (
         svc.tasks().insert(tasklist=tasklist, body=body).execute()
