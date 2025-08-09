@@ -131,6 +131,8 @@ def _parse_due_datetime(text: str, tz) -> Optional[datetime]:
             year = now.year
             try:
                 candidate = datetime(year, month, day, parsed_hour, parsed_minute)
+                # Make candidate timezone-aware for comparison
+                candidate = candidate.replace(tzinfo=tz) if tz else candidate.replace(tzinfo=timezone.utc)
             except ValueError:
                 return None
             if candidate < now:
