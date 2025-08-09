@@ -1,9 +1,10 @@
 import logging
-from datetime import datetime, timedelta, date, time
+from datetime import datetime, timedelta, date, time, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
 import os, re, json, base64, asyncio
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
@@ -23,9 +24,15 @@ from .base_handler import BaseHandler
 # Creating an object
 logger = logging.getLogger(__name__)
 
-# Bound context upstream in SQL to minimize fetch size
-max_messages_for_context = 200
-max_history_chars = 12000  # ~3k tokens approximation (4 chars/token)
+# Centralized configuration
+TZ = ZoneInfo("Asia/Jerusalem")  # Global timezone
+MAX_MESSAGES_FOR_CONTEXT = 200  # Bound context upstream in SQL
+MAX_HISTORY_CHARS = 12000       # ~3k tokens approximation (4 chars/token)
+HISTORY_PROCESSING_NOTIFY_THRESHOLD = 50
+DEFAULT_DUE_HOUR = 10
+DEFAULT_DUE_MINUTE = 0
+TARGET_TASK_LIST_NAME = "WhatsApp tasks"
+SUMMARIZE_MODEL = "anthropic:claude-4-sonnet-20250514"
 
 # Google Tasks integration helpers
 SCOPES = ["https://www.googleapis.com/auth/tasks"]
@@ -78,6 +85,65 @@ def _parse_task(text: str):
         return None
     title = text[idx + len(trigger):].strip(" \t-:")
     return title or None
+
+def _parse_due_datetime(text: str, tz) -> Optional[datetime]:
+    """
+    Parse a due datetime from free text.
+    - Date formats: DD.MM, DD.MM.YY, DD.MM.YYYY or DD/MM, DD/MM/YY, DD/MM/YYYY
+    - Time formats: HH:MM
+    Behavior:
+      - If date present: use it. If time also present: use that time, else 10:00.
+      - If only time present: use today at that time if still in future, else tomorrow.
+      - If nothing present: return None.
+    The returned datetime is timezone-aware if tz is provided; otherwise UTC.
+    """
+    if not text:
+        return None
+
+    date_match = re.search(r"\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b", text)
+    time_match = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", text)
+
+    now = datetime.now(tz) if tz else datetime.now(timezone.utc)
+
+    parsed_hour = DEFAULT_DUE_HOUR
+    parsed_minute = DEFAULT_DUE_MINUTE
+    if time_match:
+        parsed_hour = int(time_match.group(1))
+        parsed_minute = int(time_match.group(2))
+
+    if date_match:
+        day = int(date_match.group(1))
+        month = int(date_match.group(2))
+        year_part = date_match.group(3)
+
+        if year_part is None:
+            year = now.year
+            try:
+                candidate = datetime(year, month, day, parsed_hour, parsed_minute)
+            except ValueError:
+                return None
+            if candidate < now:
+                year += 1
+        else:
+            if len(year_part) == 2:
+                year = 2000 + int(year_part)
+            else:
+                year = int(year_part)
+
+        try:
+            dt = datetime(year, month, day, parsed_hour, parsed_minute)
+        except ValueError:
+            return None
+        return dt.replace(tzinfo=tz) if tz else dt.replace(tzinfo=timezone.utc)
+
+    # No date provided, but time may be
+    if time_match:
+        candidate = now.replace(hour=parsed_hour, minute=parsed_minute, second=0, microsecond=0)
+        if candidate <= now:
+            candidate = candidate + timedelta(days=1)
+        return candidate
+
+    return None
 
 def _create_google_task_sync(
     title: str,
@@ -222,12 +288,12 @@ class Router(BaseHandler):
             .where(Message.timestamp >= today_start)  # From today
             .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
             .order_by(desc(Message.timestamp))  # Newest to oldest
-            .limit(max_messages_for_context)
+            .limit(MAX_MESSAGES_FOR_CONTEXT)
         )
         res = await self.session.exec(stmt)
         messages_to_summarize: list[Message] = list(res.all())
 
-        if len(messages_to_summarize) > 50:
+        if len(messages_to_summarize) > HISTORY_PROCESSING_NOTIFY_THRESHOLD:
             await self.send_message(
                 message.chat_jid,
                 f"מעבד {len(messages_to_summarize)} הודעות... זה יכול לקחת דקה.",
@@ -235,7 +301,7 @@ class Router(BaseHandler):
             )
 
         agent = Agent(
-            model="anthropic:claude-4-sonnet-20250514",
+            model=SUMMARIZE_MODEL,
             system_prompt=f"""Create a comprehensive summary of TODAY's important discussions from the group chat.
 
             CURRENT TIME: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -264,7 +330,7 @@ class Router(BaseHandler):
 
         # Compose bounded input for the LLM (history only)
         history_text_full = chat2text(messages_to_summarize)
-        history_text = history_text_full[:max_history_chars]
+        history_text = history_text_full[:MAX_HISTORY_CHARS]
 
         response = await agent.run(
             f"# History (truncated):\n{history_text}"
@@ -310,9 +376,9 @@ class Router(BaseHandler):
                 )
                 return
 
-            # Choose list strictly by name "WhatsApp tasks"; if not found, use default
+            # Choose list strictly by name TARGET_TASK_LIST_NAME; if not found, use default
             try:
-                list_id = await asyncio.to_thread(_get_tasklist_id_by_name_sync, "WhatsApp tasks")
+                list_id = await asyncio.to_thread(_get_tasklist_id_by_name_sync, TARGET_TASK_LIST_NAME)
             except Exception as e:
                 logger.exception(f"Failed to resolve Google Tasks list by name: {e}")
                 list_id = None
@@ -331,18 +397,13 @@ class Router(BaseHandler):
 
             notes = f"Group: {group_name}\nSender: {sender_display}"
 
-            # Default due: next day at 10:00 in local timezone (Asia/Jerusalem), fallback to UTC
-            try:
-                from zoneinfo import ZoneInfo  # Python 3.9+
-                tz = ZoneInfo(os.getenv("DEFAULT_TZ", "Asia/Jerusalem"))
-            except Exception:
-                tz = None
-            from datetime import timezone
-            today_local = datetime.now(tz) if tz else datetime.now(timezone.utc)
-            next_day = (today_local + timedelta(days=1)).date()
-            due_dt = datetime.combine(next_day, time(hour=10, minute=0))
-            if tz:
-                due_dt = due_dt.replace(tzinfo=tz)
+            # Determine due date: parse from text; if absent, default to next day 10:00
+            tz = TZ
+            due_dt = _parse_due_datetime(text, tz)
+            if not due_dt:
+                today_local = datetime.now(tz)
+                next_day = (today_local + timedelta(days=1)).date()
+                due_dt = datetime.combine(next_day, time(hour=DEFAULT_DUE_HOUR, minute=DEFAULT_DUE_MINUTE)).replace(tzinfo=tz)
 
             logger.info(f"Creating Google Task: title='{title}', list='{list_id}'")
 
