@@ -172,6 +172,24 @@ def _parse_due_datetime(text: str, tz) -> Optional[datetime]:
     logger.info("due_parse no result -> None")
     return None
 
+def _compose_notes_with_due_time(
+    base_notes: Optional[str],
+    due: Optional[datetime],
+) -> Optional[str]:
+    """Compose final notes by prepending a due time line when due is present.
+
+    Always includes the time note because Google Tasks ignores times in the due field.
+    Returns None if there is no due and no base notes.
+    """
+    if due is None:
+        return base_notes
+
+    due_local = due.astimezone(TZ)
+    time_note = f"⏰ Due time: {due_local.strftime('%H:%M')}"
+    if base_notes:
+        return f"{time_note}\n\n{base_notes}"
+    return time_note
+
 def _create_google_task_sync(
     title: str,
     notes: Optional[str] = None,
@@ -182,13 +200,13 @@ def _create_google_task_sync(
     body: Dict[str, Any] = {"title": title}
     
     if due is not None:
-        # Try RFC 3339 format with explicit timezone as shown in Google Tasks API docs
-        # Format: 2010-08-09T10:57:00.000-08:00 or 2010-08-09T10:57:00.000Z
+        # Google Tasks API only supports dates, not times - but we'll send the time anyway
         due_utc = due.astimezone(timezone.utc)
-        # Use the exact format from Google Tasks API documentation
         body["due"] = due_utc.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-    if notes:
-        body["notes"] = notes
+
+    final_notes = _compose_notes_with_due_time(notes, due)
+    if final_notes:
+        body["notes"] = final_notes
         
     tasklist = list_id or "@default"
     
