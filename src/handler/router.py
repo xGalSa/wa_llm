@@ -44,6 +44,24 @@ def get_tasks_service():
     creds = load_google_tasks_credentials()
     return build("tasks", "v1", credentials=creds, cache_discovery=False)
 
+def _get_tasklist_id_by_name_sync(name: str) -> Optional[str]:
+    """Return Google Tasks list ID by its title, or None if not found."""
+    svc = get_tasks_service()
+    page_token: Optional[str] = None
+    while True:
+        resp = (
+            svc.tasklists()
+            .list(maxResults=100, pageToken=page_token)
+            .execute()
+        )
+        for tasklist in resp.get("items", []) or []:
+            if tasklist.get("title") == name:
+                return tasklist.get("id")
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return None
+
 def _parse_task(text: str):
     """
     Minimal parser: if the message contains "משימה חדשה", the task title is
@@ -290,8 +308,13 @@ class Router(BaseHandler):
                 )
                 return
 
-            # Optional: choose a specific list via env
-            list_id = os.getenv("GOOGLE_TASKS_LIST_ID") or "@default"
+            # Choose list strictly by name "WhatsApp tasks"; if not found, use default
+            try:
+                list_id = await asyncio.to_thread(_get_tasklist_id_by_name_sync, "WhatsApp tasks")
+            except Exception as e:
+                logger.exception(f"Failed to resolve Google Tasks list by name: {e}")
+                list_id = None
+            list_id = list_id or "@default"
 
             # Notes can include origin chat and sender for traceability
             notes = f"From chat: {message.chat_jid}\nSender: {message.sender_jid}"
