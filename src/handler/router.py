@@ -100,8 +100,19 @@ def _parse_due_datetime(text: str, tz) -> Optional[datetime]:
     if not text:
         return None
 
+    logger.info(f"due_parse start: text='{text}'")
     date_match = re.search(r"\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b", text)
     time_match = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", text)
+
+    if date_match:
+        logger.info(f"due_parse date_match: day={date_match.group(1)} month={date_match.group(2)} year_part={date_match.group(3)}")
+    else:
+        logger.info("due_parse no date match")
+    
+    if time_match:
+        logger.info(f"due_parse time_match: hour={time_match.group(1)} minute={time_match.group(2)}")
+    else:
+        logger.info("due_parse no time match")
 
     now = datetime.now(tz) if tz else datetime.now(timezone.utc)
 
@@ -133,16 +144,21 @@ def _parse_due_datetime(text: str, tz) -> Optional[datetime]:
         try:
             dt = datetime(year, month, day, parsed_hour, parsed_minute)
         except ValueError:
+            logger.info("due_parse invalid date components")
             return None
-        return dt.replace(tzinfo=tz) if tz else dt.replace(tzinfo=timezone.utc)
+        dt_final = dt.replace(tzinfo=tz) if tz else dt.replace(tzinfo=timezone.utc)
+        logger.info(f"due_parse result date+time -> {dt_final.isoformat()}")
+        return dt_final
 
     # No date provided, but time may be
     if time_match:
         candidate = now.replace(hour=parsed_hour, minute=parsed_minute, second=0, microsecond=0)
         if candidate <= now:
             candidate = candidate + timedelta(days=1)
+        logger.info(f"due_parse result time-only -> {candidate.isoformat()}")
         return candidate
 
+    logger.info("due_parse no result -> None")
     return None
 
 def _create_google_task_sync(
@@ -417,7 +433,14 @@ class Router(BaseHandler):
             )
 
 
-            response = f"המשימה {created.get('title')} נוספה ל-Google Tasks של המק״ס"
+            # Format due date for display
+            due_str = ""
+            if due_dt:
+                # Format in local timezone for user-friendly display
+                due_local = due_dt.astimezone(TZ)
+                due_str = f"\nמועד יעד: {due_local.strftime('%d/%m/%Y %H:%M')}"
+            
+            response = f"המשימה '{created.get('title')}' נוספה ל-Google Tasks של המק״ס{due_str}"
             await self.send_message(message.chat_jid, response, message.message_id)
             logger.info("task created")
 
@@ -431,9 +454,10 @@ class Router(BaseHandler):
             )
         except Exception as e:
             logger.exception(f"task failed: {e}")
+            error_msg = f"לא הצלחתי ליצור משימה כרגע.\nשגיאה: {type(e).__name__}: {str(e)}\nודא שהטוקן תקין ונסה שוב."
             await self.send_message(
                 message.chat_jid,
-                "לא הצלחתי ליצור משימה כרגע. ודא שהטוקן תקין ונסה שוב.",
+                error_msg,
                 message.message_id,
             )
         finally:
