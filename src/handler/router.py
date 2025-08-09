@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -63,11 +63,15 @@ def _create_google_task_sync(
     title: str,
     notes: Optional[str] = None,
     list_id: Optional[str] = None,
+    due: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     svc = get_tasks_service()
     body: Dict[str, Any] = {"title": title}
     if notes:
         body["notes"] = notes
+    if due is not None:
+        # Google Tasks expects RFC3339 timestamp
+        body["due"] = due.isoformat()
     tasklist = list_id or "@default"
     created: Dict[str, Any] = (
         svc.tasks().insert(tasklist=tasklist, body=body).execute()
@@ -292,6 +296,19 @@ class Router(BaseHandler):
             # Notes can include origin chat and sender for traceability
             notes = f"From chat: {message.chat_jid}\nSender: {message.sender_jid}"
 
+            # Default due: next day at 10:00 in local timezone (Asia/Jerusalem), fallback to UTC
+            try:
+                from zoneinfo import ZoneInfo  # Python 3.9+
+                tz = ZoneInfo(os.getenv("DEFAULT_TZ", "Asia/Jerusalem"))
+            except Exception:
+                tz = None
+            from datetime import timezone
+            today_local = datetime.now(tz) if tz else datetime.now(timezone.utc)
+            next_day = (today_local + timedelta(days=1)).date()
+            due_dt = datetime.combine(next_day, time(hour=10, minute=0))
+            if tz:
+                due_dt = due_dt.replace(tzinfo=tz)
+
             logger.info(f"Creating Google Task: title='{title}', list='{list_id}'")
 
             # Run blocking Google API call in a thread
@@ -300,6 +317,7 @@ class Router(BaseHandler):
                 title,
                 notes,
                 list_id,
+                due_dt,
             )
 
 
