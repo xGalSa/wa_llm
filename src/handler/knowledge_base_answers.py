@@ -1,15 +1,13 @@
 import logging
+import time
 from typing import List
 
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunResult
-from sqlmodel import select, cast, String, desc
+from sqlmodel import select, desc
 
-
-from src.models import Message, KBTopic
-from src.whatsapp.jid import parse_jid
+from src.models import Message
 from src.utils.chat_text import chat2text
-from src.utils.voyage_embed_text import voyage_embed_text
 from .base_handler import BaseHandler
 
 # Creating an object
@@ -17,152 +15,215 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeBaseAnswers(BaseHandler):
+    # Privacy configuration: matches MessageHandler's privacy limit
+    MAX_CONTEXT_MESSAGES = 400  # Use last 400 messages as context (privacy limit)
+    MAX_QUERY_LENGTH = 500  # Prevent extremely long queries
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Log current configuration for debugging
+        logger.info(f"KnowledgeBaseAnswers initialized with full-context approach, max_context={self.MAX_CONTEXT_MESSAGES}")
+        logger.debug(f"Logger level: {logger.getEffectiveLevel()}, Debug enabled: {logger.isEnabledFor(logging.DEBUG)}")
+    
+    async def get_recent_messages(self, group_jid: str, limit: int | None = None) -> List[Message]:
+        """Get recent messages from a group for context."""
+        if limit is None:
+            limit = self.MAX_CONTEXT_MESSAGES
+            
+        try:
+            # Get recent messages from this group only (security boundary)
+            my_jid = await self.whatsapp.get_my_jid()
+            stmt = (
+                select(Message)
+                .where(Message.group_jid == group_jid)
+                .where(Message.sender_jid != my_jid.normalize_str())  # Exclude bot messages
+                .where(Message.text != None)  # Only messages with text
+                .order_by(desc(Message.timestamp))
+                .limit(limit)
+            )
+            result = await self.session.exec(stmt)
+            messages = list(result.all())
+            
+            # Reverse to get chronological order (oldest first)
+            messages.reverse()
+            
+            logger.info(f"Retrieved {len(messages)} recent messages from group {group_jid} for context")
+            return messages
+            
+        except Exception as e:
+            logger.error(f"Error retrieving recent messages for group {group_jid}: {e}")
+            return []
+
+
+
+    async def full_context_agent(self, conversation_context: str, question: str) -> AgentRunResult[str]:
+        """
+        AI agent that answers questions using full conversation context.
+        This is much more cost-efficient than pre-processing topics.
+        """
+        try:
+            logger.info(f"Creating AI agent with model: anthropic:claude-4-sonnet-20250514")
+            agent = Agent(
+                model="anthropic:claude-4-sonnet-20250514",
+                system_prompt="""You are a helpful assistant that answers questions based on WhatsApp group conversation history.
+
+You will be provided with:
+1. The recent conversation history from the group
+2. A specific question from a user
+
+Your task:
+- Analyze the conversation history to find relevant information
+- Answer the question based ONLY on information from the conversation
+- If the information isn't in the conversation, say so clearly
+- Provide specific details and context when available
+- Credit insights to specific participants when relevant (use @username format)
+- Respond in the same language as the question (Hebrew/English/etc.)
+
+Guidelines:
+- Be concise but thorough
+- Use direct quotes when helpful
+- If multiple perspectives exist, mention them
+- Focus on recent/relevant discussions first
+- Maintain conversational tone appropriate for WhatsApp
+""",
+                retries=3,
+            )
+            logger.info(f"AI agent created successfully")
+
+            prompt = f"""## Recent Group Conversation History:
+```
+{conversation_context}
+```
+
+## User Question:
+{question}
+
+## Instructions:
+Please analyze the conversation history above and answer the user's question. Base your response ONLY on information found in the conversation. If the answer isn't in the conversation history, clearly state that."""
+
+            logger.info(f"About to run agent with prompt length: {len(prompt)}")
+            result = await agent.run(prompt)
+            logger.info(f"Agent completed successfully, response length: {len(result.output) if result.output else 0}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in full_context_agent: {type(e).__name__}: {e}", exc_info=True)
+            raise
+
+
+
+
+
+
+
     async def __call__(self, message: Message):
-        logger.info("=== KNOWLEDGE BASE ANSWERS START ===")
-        logger.info(f"Knowledge base processing message from: {message.sender_jid}")
-        logger.info(f"Knowledge base message text: '{message.text}'")
-        logger.info(f"Knowledge base chat JID: {message.chat_jid}")
+        start_time = time.time()
+        logger.info("=== FULL-CONTEXT KNOWLEDGE BASE START ===")
+        logger.info(f"Processing question from: {message.sender_jid}")
+        logger.info(f"Question: '{message.text}'")
+        logger.info(f"Group: {message.group_jid}")
         
-        # Ensure message.text is not None before passing to generation_agent
+        # Ensure message.text is not None and not too long
         if message.text is None:
             logger.warning("Received message with no text, skipping knowledge base processing")
             return
-        # get the last 7 messages
-        my_jid = await self.whatsapp.get_my_jid()
-        stmt = (
-            select(Message)
-            .where(Message.chat_jid == message.chat_jid)
-            .where(Message.sender_jid != my_jid.normalize_str())  # Exclude self messages
-            .order_by(desc(Message.timestamp))
-            .limit(400)
-        )
-        res = await self.session.exec(stmt)
-        history: list[Message] = list(res.all())
-
-        rephrased_response = await self.rephrasing_agent(
-            (await self.whatsapp.get_my_jid()).user, message, history
-        )
-        # Get query embedding
-        embedded_question = (
-            await voyage_embed_text(self.embedding_client, [rephrased_response.output])
-        )[0]
-
-        select_from = None
-        if message.group:
-            select_from = [message.group]
-            if message.group.community_keys:
-                select_from.extend(
-                    await message.group.get_related_community_groups(self.session)
-                )
-
-        # Consider adding cosine distance threshold
-        # cosine_distance_threshold = 0.8
-        limit_topics = 10
-        # query for user query
-        q = (
-            select(
-                KBTopic,
-                KBTopic.embedding.cosine_distance(embedded_question).label(
-                    "cosine_distance"
-                ),
+            
+        if len(message.text) > self.MAX_QUERY_LENGTH:
+            logger.warning(f"Message too long ({len(message.text)} chars), truncating")
+            message.text = message.text[:self.MAX_QUERY_LENGTH]
+            
+        # Security: Only process group messages (no private chats)
+        if not message.group_jid:
+            logger.warning("Private message received - knowledge base only available in groups")
+            await self.send_message(
+                message.chat_jid,
+                "מאגר הידע זמין רק בקבוצות 📚" if any(ord(c) > 127 for c in message.text)
+                else "Knowledge base is only available in groups 📚",
+                message.message_id,
             )
-            .order_by(KBTopic.embedding.cosine_distance(embedded_question))
-            # .where(KBTopic.embedding.cosine_distance(embedded_question) < cosine_distance_threshold)
-            .limit(limit_topics)
-        )
-        if select_from:
-            q = q.where(
-                cast(KBTopic.group_jid, String).in_(
-                    [group.group_jid for group in select_from]
-                )
+            return
+        
+        logger.info(f"Processing group message - group_jid: {message.group_jid}")
+            
+        # Get recent message history for context (security: only from this group)
+        logger.info(f"About to fetch recent messages for group: {message.group_jid}")
+        recent_messages = await self.get_recent_messages(message.group_jid, limit=self.MAX_CONTEXT_MESSAGES)
+        logger.info(f"Retrieved {len(recent_messages)} recent messages successfully")
+        
+        if len(recent_messages) < 5:
+            logger.warning(f"Not enough message history ({len(recent_messages)} messages) for meaningful context")
+            await self.send_message(
+                message.chat_jid,
+                "אין מספיק היסטוריית הודעות עדיין כדי לענות על שאלות 📚" if any(ord(c) > 127 for c in message.text)
+                else "Not enough message history yet to answer questions 📚",
+                message.message_id,
             )
-        retrieved_topics = await self.session.exec(q)
-
-        similar_topics = []
-        similar_topics_distances = []
-        for kb_topic, topic_distance in retrieved_topics:  # Unpack the tuple
-            similar_topics.append(f"{kb_topic.subject} \n {kb_topic.summary}")
-            similar_topics_distances.append(f"topic_distance: {topic_distance}")
-
-        sender_number = parse_jid(message.sender_jid).user
-        generation_response = await self.generation_agent(
-            message.text, similar_topics, sender_number, history
-        )
-        # Remove privacy-sensitive logging
-        # logger.info(
-        #     "RAG Query Results:\n"
-        #     f"Sender: {sender_number}\n"
-        #     f"Question: {message.text}\n"
-        #     f"Rephrased Question: {rephrased_response.output}\n"
-        #     f"Chat JID: {message.chat_jid}\n"
-        #     f"Retrieved Topics: {len(similar_topics)}\n"
-        #     f"Similarity Scores: {similar_topics_distances}\n"
-        #     "Topics:\n"
-        #     + "\n".join(f"- {topic[:100]}..." for topic in similar_topics)
-        #     + "\n"
-        #     f"Generated Response: {generation_response.output}"
-        # )
-
-        logger.info(f"About to send knowledge base response to {message.chat_jid}")
-        logger.info(f"Response length: {len(generation_response.output)} characters")
-        logger.info(f"Response preview: {generation_response.output[:100]}...")
+            return
         
-        await self.send_message(
-            message.chat_jid,
-            generation_response.output,
-            message.message_id,
-        )
+        # Convert message history to conversational text
+        conversation_context = chat2text(recent_messages)
+        logger.info(f"Using {len(recent_messages)} messages as context ({len(conversation_context)} chars)")
         
-        logger.info("Knowledge base response sent successfully")
-        logger.info("=== KNOWLEDGE BASE ANSWERS END ===")
-
-    async def generation_agent(
-        self, query: str, topics: list[str], sender: str, history: List[Message]
-    ) -> AgentRunResult[str]:
-        agent = Agent(
-            model="anthropic:claude-4-sonnet-20250514",
-            system_prompt="""Answer the user's question based on the attached knowledge base topics.
-
-            FORMATTING: Use WhatsApp formatting - *bold* for emphasis, _italic_ for quotes, emojis for organization.
-
-            GUIDELINES:
-            - Answer in the same language as the question
-            - Be conversational and concise (this is a WhatsApp chat)
-            - Only use information from the attached topics
-            - Tag users with @number when mentioning them
-            - If no relevant topics found, say "לא מצאתי מידע רלוונטי על זה" (Hebrew) or "I couldn't find relevant information about this" (English)
-
-            CONTEXT: Recent chat history is provided for context. Use it if relevant, ignore if not.""",
-            max_tokens=25000,
-        )
-
-        prompt_template = f"""
-        {f"@{sender}"}: {query}
+        # Validate context length (prevent extremely large contexts)
+        MAX_CONTEXT_CHARS = 100000  # ~25k tokens limit
+        if len(conversation_context) > MAX_CONTEXT_CHARS:
+            logger.warning(f"Context too long ({len(conversation_context)} chars), truncating to {MAX_CONTEXT_CHARS}")
+            conversation_context = conversation_context[-MAX_CONTEXT_CHARS:]  # Keep most recent part
         
-        # Recent chat history:
-        {chat2text(history)}
-        
-        # Related Topics:
-        {"\n---\n".join(topics) if len(topics) > 0 else "No related topics found."}
-        """
-
-        return await agent.run(prompt_template)
-
-    async def rephrasing_agent(
-        self, my_jid: str, message: Message, history: List[Message]
-    ) -> AgentRunResult[str]:
-        rephrased_agent = Agent(
-            model="anthropic:claude-4-sonnet-20250514",
-            system_prompt=f"""Phrase the following message as a short paragraph describing a query from the knowledge base.
-            - Use English only!
-            - Ensure only to include the query itself. The message that includes a lot of information - focus on what the user asks you.
-            - Your name is @{my_jid}
-            - Attached is the recent chat history. You can use it to understand the context of the query. If the context is not clear or irrelevant to the query, ignore it.
-            - ONLY answer with the new phrased query, no other text!""",
-            max_tokens=25000,
-        )
-
-        # We obviously need to translate the question and turn the question vebality to a title / summary text to make it closer to the questions in the rag
-        return await rephrased_agent.run(
-            f"{message.text}\n\n## Recent chat history:\n {chat2text(history)}"
-        )
+        # Process question with full conversation context (only pay when asked!)
+        try:
+            logger.info(f"Sending to AI: question='{message.text}' context_chars={len(conversation_context)}")
+            logger.info(f"About to call full_context_agent with context preview: {conversation_context[:200]}...")
+            response = await self.full_context_agent(conversation_context, message.text)
+            logger.info(f"AI agent returned successfully")
+            
+            if not response.output or not response.output.strip():
+                logger.warning("AI returned empty response")
+                await self.send_message(
+                    message.chat_jid,
+                    "מצטער, לא הצלחתי למצוא מידע רלוונטי בהיסטוריית הקבוצה" if any(ord(c) > 127 for c in message.text)
+                    else "Sorry, I couldn't find relevant information in the group history",
+                    message.message_id,
+                )
+                return
+            
+            logger.info(f"Generated response ({len(response.output)} chars): {response.output[:100]}...")
+            
+            # Check WhatsApp message length limit
+            if len(response.output) > 4000:
+                logger.warning(f"Response too long ({len(response.output)} chars), truncating")
+                response_text = response.output[:4000] + "\n\n[...תשובה קוצרה בגלל אורך]"
+            else:
+                response_text = response.output
+            
+            await self.send_message(
+                message.chat_jid,
+                response_text,
+                message.message_id,
+            )
+            
+            # Log successful completion
+            total_time = time.time() - start_time
+            logger.info(f"Full-context response sent successfully in {total_time:.2f} seconds")
+            logger.info("=== FULL-CONTEXT KNOWLEDGE BASE END ===")
+            
+        except Exception as e:
+            logger.error(f"Failed to generate full-context response: {e}", exc_info=True)
+            
+            # Check for specific API key error
+            error_msg = str(e)
+            if "ANTHROPIC_API_KEY" in error_msg or "api_key" in error_msg.lower():
+                logger.error("ANTHROPIC_API_KEY environment variable not set!")
+                await self.send_message(
+                    message.chat_jid,
+                    "מאגר הידע לא מוגדר כרגע - חסר מפתח API 🔑" if any(ord(c) > 127 for c in message.text)
+                    else "Knowledge base not configured - missing API key 🔑",
+                    message.message_id,
+                )
+            else:
+                await self.send_message(
+                    message.chat_jid,
+                    "מצטער, יש לי בעיה טכנית בעיבוד השאלה" if any(ord(c) > 127 for c in message.text)
+                    else "Sorry, I'm having a technical issue processing your question",
+                    message.message_id,
+                )
