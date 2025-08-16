@@ -60,6 +60,7 @@ class MessageHandler(BaseHandler):
     ):
         super().__init__(session, whatsapp, embedding_client)
         self.router = Router(session, whatsapp, embedding_client)
+        logger.info("MessageHandler initialized with database-level privacy protection (400 messages per group)")
 
     async def __call__(self, payload: WhatsAppWebhookPayload) -> None:
         """Handle incoming webhook payload."""
@@ -100,9 +101,11 @@ class MessageHandler(BaseHandler):
             
             logger.info(f"handler stored successfully id={stored_message.message_id}")
 
-            # Trigger automatic topic loading for group messages (non-blocking)
-            if stored_message.group_jid:
-                asyncio.create_task(self._auto_load_topics_for_group(stored_message.group_jid))
+            # Note: Message privacy cleanup is handled automatically by database trigger
+            # See migration: add_cyclic_message_storage_trigger.py
+            
+            # Note: Removed expensive auto topic loading - now using on-demand full-context processing
+            # This saves significant costs by only processing when users actually ask questions
 
             # Check if message is from bot itself
             if await self._is_bot_message(message.sender_jid):
@@ -227,57 +230,5 @@ class MessageHandler(BaseHandler):
         except Exception as exc:
             logger.error(f"Unexpected error forwarding message to {forward_url}: {exc}")
 
-    async def _auto_load_topics_for_group(self, group_jid: str) -> None:
-        """
-        Automatically load topics for a group with responsive processing:
-        - Triggers every 5 minutes (instead of 15)
-        - Requires only 2+ new messages (instead of 5)
-        - AI agent intelligently separates mixed topics within batches
-        - Runs in background without blocking message processing
-        """
-        try:
-            # Get group from database
-            group = await self.session.get(Group, group_jid)
-            if not group or not group.managed:
-                return
 
-            # More responsive topic loading: process every 5 minutes with 2+ messages
-            min_interval = timedelta(minutes=5)
-            if group.last_ingest and (datetime.now() - group.last_ingest) < min_interval:
-                logger.debug(f"auto_topic_loader: skipping {group.group_name} - too recent ({group.last_ingest})")
-                return
 
-            # Check if there are enough new messages to warrant topic extraction
-            my_jid = await self.whatsapp.get_my_jid()
-            stmt = (
-                select(func.count())
-                .select_from(Message)
-                .where(Message.timestamp >= group.last_ingest)
-                .where(Message.group_jid == group.group_jid)
-                .where(Message.sender_jid != my_jid.normalize_str())
-            )
-            result = await self.session.exec(stmt)
-            new_message_count = result.one()
-            
-            # More responsive: only need 2+ messages instead of 5
-            if new_message_count < 2:
-                logger.debug(f"auto_topic_loader: skipping {group.group_name} - only {new_message_count} new messages")
-                return
-
-            logger.info(f"auto_topic_loader: starting for group {group.group_name} ({new_message_count} new messages)")
-            
-            # Load topics for this group
-            # The AI agent will intelligently separate mixed topics within the conversation batch
-            topics_loader = topicsLoader()
-            await topics_loader.load_topics(
-                self.session, 
-                group, 
-                self.embedding_client, 
-                self.whatsapp
-            )
-            
-            logger.info(f"auto_topic_loader: completed for group {group.group_name}")
-
-        except Exception as e:
-            # Log error but don't let it break message processing
-            logger.error(f"auto_topic_loader: error for group {group_jid}: {e}", exc_info=True)
