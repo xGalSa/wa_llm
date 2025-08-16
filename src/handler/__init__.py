@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import httpx
+from datetime import datetime, timedelta
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -7,6 +9,8 @@ from voyageai.client_async import AsyncClient
 
 from src.handler.base_handler import BaseHandler
 from src.handler.router import Router
+from src.load_new_kbtopics import topicsLoader
+from src.models.group import Group
 from src.models.message import Message
 from src.models.sender import Sender
 from src.models.webhook import WhatsAppWebhookPayload
@@ -95,6 +99,10 @@ class MessageHandler(BaseHandler):
                 return
             
             logger.info(f"handler stored successfully id={stored_message.message_id}")
+
+            # Trigger automatic topic loading for group messages (non-blocking)
+            if stored_message.group_jid:
+                asyncio.create_task(self._auto_load_topics_for_group(stored_message.group_jid))
 
             # Check if message is from bot itself
             if await self._is_bot_message(message.sender_jid):
@@ -218,3 +226,37 @@ class MessageHandler(BaseHandler):
             logger.error(f"Failed to forward message to {forward_url}: {exc}")
         except Exception as exc:
             logger.error(f"Unexpected error forwarding message to {forward_url}: {exc}")
+
+    async def _auto_load_topics_for_group(self, group_jid: str) -> None:
+        """
+        Automatically load topics for a group if enough time has passed since last ingest.
+        This runs in the background and doesn't block message processing.
+        """
+        try:
+            # Get group from database
+            group = await self.session.get(Group, group_jid)
+            if not group or not group.managed:
+                return
+
+            # Only load topics if enough time has passed (e.g., 15 minutes)
+            min_interval = timedelta(minutes=15)
+            if group.last_ingest and (datetime.now() - group.last_ingest) < min_interval:
+                logger.debug(f"auto_topic_loader: skipping {group.group_name} - too recent ({group.last_ingest})")
+                return
+
+            logger.info(f"auto_topic_loader: starting for group {group.group_name}")
+            
+            # Load topics for this group
+            topics_loader = topicsLoader()
+            await topics_loader.load_topics(
+                self.session, 
+                group, 
+                self.embedding_client, 
+                self.whatsapp
+            )
+            
+            logger.info(f"auto_topic_loader: completed for group {group.group_name}")
+
+        except Exception as e:
+            # Log error but don't let it break message processing
+            logger.error(f"auto_topic_loader: error for group {group_jid}: {e}", exc_info=True)

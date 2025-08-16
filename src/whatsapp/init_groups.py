@@ -32,7 +32,7 @@ async def gather_groups(db_engine: AsyncEngine, client: WhatsAppClient):
                         group_name=g.Name,
                         group_topic=g.Topic,
                         owner_jid=ownerUsr,
-                        managed=og.managed if og else False,
+                        managed=og.managed if og else True,
                         community_keys=og.community_keys if og else None,
                         last_ingest=og.last_ingest if og else datetime.now(),
                         last_summary_sync=og.last_summary_sync
