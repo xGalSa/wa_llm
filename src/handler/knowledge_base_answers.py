@@ -170,11 +170,19 @@ class KnowledgeBaseAnswers(BaseHandler):
             if orphaned_count > 0:
                 logger.warning(f"SECURITY WARNING: Found {orphaned_count} orphaned topics with NULL group_jid")
             
+            # Check if we have any groups set up for topic loading
+            groups_stmt = select(func.count()).select_from(Group).where(Group.managed == True)
+            groups_result = await self.session.exec(groups_stmt)
+            managed_groups_count = groups_result.one()
+            
             if topic_count == 0:
-                logger.warning("Knowledge base is empty - no topics found")
+                if managed_groups_count == 0:
+                    logger.warning("Knowledge base is empty - no managed groups configured for topic loading")
+                else:
+                    logger.warning(f"Knowledge base is empty - {managed_groups_count} managed groups found but no topics loaded yet")
                 return False
                 
-            logger.info(f"Knowledge base health check: {topic_count} valid topics available")
+            logger.info(f"Knowledge base health check: {topic_count} valid topics available from {managed_groups_count} managed groups")
             return True
         except Exception as e:
             logger.error(f"Knowledge base health check failed: {e}")
@@ -238,10 +246,46 @@ class KnowledgeBaseAnswers(BaseHandler):
             
         # Quick health check
         if not await self.check_kb_health():
+            # Get more specific error message based on the actual issue
+            try:
+                # Check if we have any topics
+                count_stmt = select(func.count()).select_from(KBTopic).where(KBTopic.group_jid != None)
+                result = await self.session.exec(count_stmt)
+                topic_count = result.one()
+                
+                # Check if we have managed groups
+                groups_stmt = select(func.count()).select_from(Group).where(Group.managed == True)
+                groups_result = await self.session.exec(groups_stmt)
+                managed_groups_count = groups_result.one()
+                
+                if managed_groups_count == 0:
+                    error_message = (
+                        "מאגר הידע לא מוגדר עדיין. יש לקבוע קבוצות מנוהלות תחילה 🔧" 
+                        if any(ord(c) > 127 for c in message.text)
+                        else "Knowledge base not configured yet. Managed groups need to be set up first 🔧"
+                    )
+                elif topic_count == 0:
+                    error_message = (
+                        "מאגר הידע ריק. יש להפעיל את תהליך טעינת הנושאים 📚" 
+                        if any(ord(c) > 127 for c in message.text)
+                        else "Knowledge base is empty. Topic loading process needs to be run 📚"
+                    )
+                else:
+                    error_message = (
+                        "מאגר הידע לא זמין כרגע 😔" 
+                        if any(ord(c) > 127 for c in message.text)
+                        else "Knowledge base is not available right now 😔"
+                    )
+            except Exception:
+                error_message = (
+                    "מאגר הידע לא זמין כרגע 😔" 
+                    if any(ord(c) > 127 for c in message.text)
+                    else "Knowledge base is not available right now 😔"
+                )
+            
             await self.send_message(
                 message.chat_jid,
-                "מאגר הידע לא זמין כרגע 😔" if any(ord(c) > 127 for c in message.text)
-                else "Knowledge base is not available right now 😔",
+                error_message,
                 message.message_id,
             )
             return
