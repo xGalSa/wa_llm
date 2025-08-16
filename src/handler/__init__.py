@@ -3,7 +3,7 @@ import logging
 import httpx
 from datetime import datetime, timedelta
 
-from sqlmodel import select
+from sqlmodel import select, func
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
@@ -229,8 +229,11 @@ class MessageHandler(BaseHandler):
 
     async def _auto_load_topics_for_group(self, group_jid: str) -> None:
         """
-        Automatically load topics for a group if enough time has passed since last ingest.
-        This runs in the background and doesn't block message processing.
+        Automatically load topics for a group with responsive processing:
+        - Triggers every 5 minutes (instead of 15)
+        - Requires only 2+ new messages (instead of 5)
+        - AI agent intelligently separates mixed topics within batches
+        - Runs in background without blocking message processing
         """
         try:
             # Get group from database
@@ -238,15 +241,33 @@ class MessageHandler(BaseHandler):
             if not group or not group.managed:
                 return
 
-            # Only load topics if enough time has passed (e.g., 15 minutes)
-            min_interval = timedelta(minutes=15)
+            # More responsive topic loading: process every 5 minutes with 2+ messages
+            min_interval = timedelta(minutes=5)
             if group.last_ingest and (datetime.now() - group.last_ingest) < min_interval:
                 logger.debug(f"auto_topic_loader: skipping {group.group_name} - too recent ({group.last_ingest})")
                 return
 
-            logger.info(f"auto_topic_loader: starting for group {group.group_name}")
+            # Check if there are enough new messages to warrant topic extraction
+            my_jid = await self.whatsapp.get_my_jid()
+            stmt = (
+                select(func.count())
+                .select_from(Message)
+                .where(Message.timestamp >= group.last_ingest)
+                .where(Message.group_jid == group.group_jid)
+                .where(Message.sender_jid != my_jid.normalize_str())
+            )
+            result = await self.session.exec(stmt)
+            new_message_count = result.one()
+            
+            # More responsive: only need 2+ messages instead of 5
+            if new_message_count < 2:
+                logger.debug(f"auto_topic_loader: skipping {group.group_name} - only {new_message_count} new messages")
+                return
+
+            logger.info(f"auto_topic_loader: starting for group {group.group_name} ({new_message_count} new messages)")
             
             # Load topics for this group
+            # The AI agent will intelligently separate mixed topics within the conversation batch
             topics_loader = topicsLoader()
             await topics_loader.load_topics(
                 self.session, 
