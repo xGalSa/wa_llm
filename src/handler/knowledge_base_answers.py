@@ -61,10 +61,11 @@ class KnowledgeBaseAnswers(BaseHandler):
         AI agent that answers questions using full conversation context.
         This is much more cost-efficient than pre-processing topics.
         """
-        agent = Agent(
-            model="anthropic:claude-4-sonnet-20250514",
-            model_settings={"max_tokens": 25000},
-            system_prompt="""You are a helpful assistant that answers questions based on WhatsApp group conversation history.
+        try:
+            logger.info(f"Creating AI agent with model: anthropic:claude-4-sonnet-20250514")
+            agent = Agent(
+                model="anthropic:claude-4-sonnet-20250514",
+                system_prompt="""You are a helpful assistant that answers questions based on WhatsApp group conversation history.
 
 You will be provided with:
 1. The recent conversation history from the group
@@ -85,10 +86,11 @@ Guidelines:
 - Focus on recent/relevant discussions first
 - Maintain conversational tone appropriate for WhatsApp
 """,
-            retries=3,
-        )
+                retries=3,
+            )
+            logger.info(f"AI agent created successfully")
 
-        prompt = f"""## Recent Group Conversation History:
+            prompt = f"""## Recent Group Conversation History:
 ```
 {conversation_context}
 ```
@@ -99,7 +101,14 @@ Guidelines:
 ## Instructions:
 Please analyze the conversation history above and answer the user's question. Base your response ONLY on information found in the conversation. If the answer isn't in the conversation history, clearly state that."""
 
-        return await agent.run(prompt)
+            logger.info(f"About to run agent with prompt length: {len(prompt)}")
+            result = await agent.run(prompt)
+            logger.info(f"Agent completed successfully, response length: {len(result.output) if result.output else 0}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in full_context_agent: {type(e).__name__}: {e}", exc_info=True)
+            raise
 
 
 
@@ -133,9 +142,13 @@ Please analyze the conversation history above and answer the user's question. Ba
                 message.message_id,
             )
             return
+        
+        logger.info(f"Processing group message - group_jid: {message.group_jid}")
             
         # Get recent message history for context (security: only from this group)
+        logger.info(f"About to fetch recent messages for group: {message.group_jid}")
         recent_messages = await self.get_recent_messages(message.group_jid, limit=self.MAX_CONTEXT_MESSAGES)
+        logger.info(f"Retrieved {len(recent_messages)} recent messages successfully")
         
         if len(recent_messages) < 5:
             logger.warning(f"Not enough message history ({len(recent_messages)} messages) for meaningful context")
@@ -159,8 +172,10 @@ Please analyze the conversation history above and answer the user's question. Ba
         
         # Process question with full conversation context (only pay when asked!)
         try:
-            logger.debug(f"Sending to AI: question='{message.text}' context_chars={len(conversation_context)}")
+            logger.info(f"Sending to AI: question='{message.text}' context_chars={len(conversation_context)}")
+            logger.info(f"About to call full_context_agent with context preview: {conversation_context[:200]}...")
             response = await self.full_context_agent(conversation_context, message.text)
+            logger.info(f"AI agent returned successfully")
             
             if not response.output or not response.output.strip():
                 logger.warning("AI returned empty response")
@@ -194,9 +209,21 @@ Please analyze the conversation history above and answer the user's question. Ba
             
         except Exception as e:
             logger.error(f"Failed to generate full-context response: {e}", exc_info=True)
-            await self.send_message(
-                message.chat_jid,
-                "מצטער, יש לי בעיה טכנית בעיבוד השאלה" if any(ord(c) > 127 for c in message.text)
-                else "Sorry, I'm having a technical issue processing your question",
-                message.message_id,
-            )
+            
+            # Check for specific API key error
+            error_msg = str(e)
+            if "ANTHROPIC_API_KEY" in error_msg or "api_key" in error_msg.lower():
+                logger.error("ANTHROPIC_API_KEY environment variable not set!")
+                await self.send_message(
+                    message.chat_jid,
+                    "מאגר הידע לא מוגדר כרגע - חסר מפתח API 🔑" if any(ord(c) > 127 for c in message.text)
+                    else "Knowledge base not configured - missing API key 🔑",
+                    message.message_id,
+                )
+            else:
+                await self.send_message(
+                    message.chat_jid,
+                    "מצטער, יש לי בעיה טכנית בעיבוד השאלה" if any(ord(c) > 127 for c in message.text)
+                    else "Sorry, I'm having a technical issue processing your question",
+                    message.message_id,
+                )
