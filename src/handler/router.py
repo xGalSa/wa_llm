@@ -419,10 +419,10 @@ class Router(BaseHandler):
         )
         logger.info("summarize end")
 
-    async def about(self, message):
+    async def about(self, message: Message):
         await self.send_message(
             message.chat_jid,
-            "I'm an open-source bot created for the GenAI Israel community - https://llm.org.il.\nI can help you catch up on the chat messages and answer questions based on the group's knowledge.\nPlease send me PRs and star me at https://github.com/ilanbenb/wa_llm ⭐️",
+            "I'm an open-source bot created for the GenAI Israel community - https://llm.org.il.\nI can help you catch up on the chat messages or answer questions based on the group's knowledge.\nPlease send me PRs and star me at https://github.com/ilanbenb/wa_llm ⭐️",
             message.message_id,
         )
 
@@ -511,7 +511,7 @@ class Router(BaseHandler):
         finally:
             logger.info("task end")
 
-    async def default_response(self, message):
+    async def default_response(self, message: Message):
         await self.send_message(
             message.chat_jid,
             "מצטער, אבל אני לא חושב שאני יכול לעזור עם זה כרגע 😅.\n אני יכול לעזור לך להתעדכן בהודעות הצ'אט או לענות על שאלות בהתבסס על הידע של הקבוצה.",

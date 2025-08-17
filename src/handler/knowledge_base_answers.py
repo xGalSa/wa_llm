@@ -54,8 +54,6 @@ class KnowledgeBaseAnswers(BaseHandler):
             logger.error(f"Error retrieving recent messages for group {group_jid}: {e}")
             return []
 
-
-
     async def full_context_agent(self, conversation_context: str, question: str) -> AgentRunResult[str]:
         """
         AI agent that answers questions using full conversation context.
