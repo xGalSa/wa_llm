@@ -114,7 +114,7 @@ class Message(BaseMessage, table=True):
     def _extract_message_text(payload: WhatsAppWebhookPayload) -> Optional[str]:
         """Extract message text based on content type."""
         # Return direct message text if available
-        if payload.message.text:
+        if payload.message and payload.message.text:
             return payload.message.text
 
         # Map content types to their caption attributes
