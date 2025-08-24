@@ -268,7 +268,7 @@ class Router(BaseHandler):
         logger.info(f"route msg_preview='{message[:60]}'")
         
         # Check for summarize intent
-        if any(phrase in message_lower for phrase in ["סיכום", "daily summary", "summarize", "סיכום"]):
+        if any(phrase in message_lower for phrase in ["סיכום יומי", "daily summary", "summarize", "סיכום"]):
             logger.info("Routing to summarize")
             return IntentEnum.summarize
             
@@ -354,13 +354,7 @@ class Router(BaseHandler):
         if len(messages_to_summarize) > HISTORY_PROCESSING_NOTIFY_THRESHOLD:
             await self.send_message(
                 message.chat_jid,
-                f"מעבד {len(messages_to_summarize)} הודעות בשביל סיכום יומי... זה יכול לקחת דקה.",
-                message.message_id,
-            )
-        else:
-            await self.send_message(
-                message.chat_jid,
-                f"מכין סיכום יומי עבור הקבוצה",
+                f"מעבד {len(messages_to_summarize)} הודעות... זה יכול לקחת דקה.",
                 message.message_id,
             )
 

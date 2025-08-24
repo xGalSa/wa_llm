@@ -1,16 +1,11 @@
-import asyncio
 import logging
 import httpx
-from datetime import datetime, timedelta
 
-from sqlmodel import select, func
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from voyageai.client_async import AsyncClient
 
-from src.handler.base_handler import BaseHandler
 from src.handler.router import Router
-from src.load_new_kbtopics import topicsLoader
-from src.models.group import Group
 from src.models.message import Message
 from src.models.sender import Sender
 from src.models.webhook import WhatsAppWebhookPayload
@@ -51,16 +46,17 @@ def extract_phone_from_participant(participant):
         return None
 
 
-class MessageHandler(BaseHandler):
+class MessageHandler:
     def __init__(
         self,
         session: AsyncSession,
         whatsapp: WhatsAppClient,
         embedding_client: AsyncClient,
     ):
-        super().__init__(session, whatsapp, embedding_client)
+        self.session = session
+        self.whatsapp = whatsapp
+        self.embedding_client = embedding_client
         self.router = Router(session, whatsapp, embedding_client)
-        logger.info("MessageHandler initialized with database-level privacy protection (400 messages per group)")
 
     async def __call__(self, payload: WhatsAppWebhookPayload) -> None:
         """Handle incoming webhook payload."""
@@ -87,25 +83,14 @@ class MessageHandler(BaseHandler):
                 logger.info("handler empty text, skip")
                 return
 
-            # Check if message already exists (duplicate detection)
-            existing_message = await self.session.get(Message, message.message_id)
-            if existing_message:
-                logger.info(f"handler duplicate detected id={message.message_id}, skip routing")
+            # Store message in database; only continue if this is the first time we see it
+            is_new_message = await self._store_message(message)
+            logger.info(
+                f"handler stored is_new={is_new_message} key={message.message_id}"
+            )
+            if not is_new_message:
+                logger.info("handler duplicate detected, skip routing")
                 return
-            
-            # Store message in database using BaseHandler's robust method
-            stored_message = await self.store_message(message, payload.pushname)
-            if stored_message is None:
-                logger.info("handler message not stored (error occurred), skip routing")
-                return
-            
-            logger.info(f"handler stored successfully id={stored_message.message_id}")
-
-            # Note: Message privacy cleanup is handled automatically by database trigger
-            # See migration: add_cyclic_message_storage_trigger.py
-            
-            # Note: Removed expensive auto topic loading - now using on-demand full-context processing
-            # This saves significant costs by only processing when users actually ask questions
 
             # Check if message is from bot itself
             if await self._is_bot_message(message.sender_jid):
@@ -142,7 +127,41 @@ class MessageHandler(BaseHandler):
             # If we can't determine, assume it's not from bot to be safe
             return False
 
+    async def _store_message(self, message: Message) -> bool:
+        """Store message in database.
+        Returns True if newly stored, False if it already existed or failed.
+        """
+        try:
+            # Do not store messages without text to avoid DB noise
+            if not message.text or message.text.strip() == "":
+                logger.info("handler skip store: empty text")
+                return False
+            # Check if message already exists
+            existing_message = await self.session.get(Message, message.message_id)
+            
+            if existing_message:
+                logger.info(f"handler already exists id={message.message_id}")
+                return False
 
+            # Store sender if not exists
+            sender = await self.session.get(Sender, message.sender_jid)
+            
+            if not sender:
+                sender = Sender(jid=message.sender_jid)
+                self.session.add(sender)
+                await self.session.commit()
+                await self.session.refresh(sender)
+
+            # Store message
+            self.session.add(message)
+            await self.session.commit()
+            logger.info(f"handler stored id={message.message_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"handler store error: {e}", exc_info=True)
+            await self.session.rollback()
+            return False
 
     async def _handle_bot_command(self, message: Message) -> None:
         """Handle bot commands and mentions."""
@@ -229,6 +248,3 @@ class MessageHandler(BaseHandler):
             logger.error(f"Failed to forward message to {forward_url}: {exc}")
         except Exception as exc:
             logger.error(f"Unexpected error forwarding message to {forward_url}: {exc}")
-
-
-
