@@ -15,7 +15,7 @@ from src.models.message import Message
 from src.models.sender import Sender
 from src.models.webhook import WhatsAppWebhookPayload
 from src.whatsapp.client import WhatsAppClient
-from src.whatsapp.jid import JID, parse_jid
+from src.whatsapp.jid import JID, parse_jid, normalize_jid
 
 
 logger = logging.getLogger(__name__)
@@ -126,15 +126,21 @@ class MessageHandler(BaseHandler):
         """Check if message is from the bot itself."""
         try:
             my_jid = await self.whatsapp.get_my_jid()
+            # Normalize the incoming sender_jid before comparison
+            normalized_sender_jid = normalize_jid(sender_jid)
+            
             bot_jids = [
                 str(my_jid),
                 my_jid.normalize_str(),
                 f"{my_jid.user}@s.whatsapp.net",
                 f"{my_jid.user}@c.us",
             ]
-            is_bot = sender_jid in bot_jids
+            # Normalize all bot JIDs for comparison
+            normalized_bot_jids = [normalize_jid(jid) for jid in bot_jids]
+            
+            is_bot = normalized_sender_jid in normalized_bot_jids
             logger.info(
-                f"handler is_bot_check sender={sender_jid} my={my_jid} is_bot={is_bot}"
+                f"handler is_bot_check sender={sender_jid} normalized={normalized_sender_jid} my={my_jid} is_bot={is_bot}"
             )
             return is_bot
         except Exception as e:

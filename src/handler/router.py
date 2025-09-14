@@ -268,7 +268,7 @@ class Router(BaseHandler):
         logger.info(f"route msg_preview='{message[:60]}'")
         
         # Check for summarize intent
-        if any(phrase in message_lower for phrase in ["סיכום", "daily summary", "summarize", "סיכום"]):
+        if any(phrase in message_lower for phrase in ["סיכום", "daily summary", "summarize"]):
             logger.info("Routing to summarize")
             return IntentEnum.summarize
             
@@ -350,19 +350,6 @@ class Router(BaseHandler):
         )
         res = await self.session.exec(stmt)
         messages_to_summarize: list[Message] = list(res.all())
-
-        if len(messages_to_summarize) > HISTORY_PROCESSING_NOTIFY_THRESHOLD:
-            await self.send_message(
-                message.chat_jid,
-                f"מעבד {len(messages_to_summarize)} הודעות בשביל סיכום יומי... זה יכול לקחת דקה.",
-                message.message_id,
-            )
-        else:
-            await self.send_message(
-                message.chat_jid,
-                f"מכין סיכום יומי עבור הקבוצה",
-                message.message_id,
-            )
 
         agent = Agent(
             model=SUMMARIZE_MODEL,
